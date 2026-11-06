@@ -63,6 +63,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 与 release 签名包共存，便于真机调试（FileProvider authority 用 ${applicationId}，会自动跟随）
+            applicationIdSuffix = ".debug"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
