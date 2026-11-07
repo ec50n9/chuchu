@@ -17,6 +17,7 @@ import com.jossephus.chuchu.service.multiplexer.MultiplexerCommandResult
 import com.jossephus.chuchu.service.multiplexer.MultiplexerRegistry
 import com.jossephus.chuchu.service.multiplexer.MultiplexerSessionAllocator
 import com.jossephus.chuchu.service.multiplexer.RemoteMultiplexerSession
+import com.jossephus.chuchu.service.multiplexer.RemotePath
 import com.jossephus.chuchu.service.ssh.HostKeyCheck
 import com.jossephus.chuchu.service.ssh.HostKeyStore
 import com.jossephus.chuchu.service.ssh.NativeSshService
@@ -94,16 +95,21 @@ class TerminalSessionEngine(
         val multiplexer: MultiplexerType? = null,
         val multiplexerSessionName: String? = null,
         val multiplexerCreateIfMissing: Boolean = true,
+        val remotePath: String? = null,
     ) {
         fun multiplexerStartupCommand(): String? {
             val type = multiplexer ?: return null
             if (!type.runtimeSupported || transport == Transport.Mosh || transport == Transport.LocalShell) return null
             val sessionName = multiplexerSessionName?.takeIf { it.isNotBlank() } ?: return null
             val runtime = MultiplexerRegistry.forType(type) ?: return null
-            return runtime.launchCommand(
-                sessionName = sessionName,
-                createIfMissing = multiplexerCreateIfMissing,
-                trustedRemoteName = true,
+            return RemotePath.apply(
+                remotePath,
+                type.id,
+                runtime.launchCommand(
+                    sessionName = sessionName,
+                    createIfMissing = multiplexerCreateIfMissing,
+                    trustedRemoteName = true,
+                ),
             )
         }
     }
@@ -180,6 +186,7 @@ class TerminalSessionEngine(
         multiplexer: MultiplexerType? = null,
         multiplexerSessionName: String? = null,
         multiplexerCreateIfMissing: Boolean = true,
+        remotePath: String? = null,
     ) {
         disconnectRequested = false
         val params =
@@ -197,6 +204,7 @@ class TerminalSessionEngine(
                 multiplexer = multiplexer,
                 multiplexerSessionName = multiplexerSessionName,
                 multiplexerCreateIfMissing = multiplexerCreateIfMissing,
+                remotePath = remotePath,
             )
         lastConnectionParams = params
         scope.launch(dispatcher) {
@@ -524,7 +532,11 @@ class TerminalSessionEngine(
             return MultiplexerAvailability.UnsupportedTransport(params.transport)
         }
         return runCatching {
-            val result = runMultiplexerCommand(params, multiplexer.availabilityCommand())
+            val result =
+                runMultiplexerCommand(
+                    params,
+                    RemotePath.apply(params.remotePath, multiplexer.type.id, multiplexer.availabilityCommand()),
+                )
             if (result.isSuccess) {
                 MultiplexerAvailability.Available
             } else {
@@ -559,7 +571,11 @@ class TerminalSessionEngine(
             if (spec.transport == Transport.Mosh || spec.transport == Transport.LocalShell) {
                 throw IllegalStateException("${type.label} is not supported for ${spec.transport} connections")
             }
-            val result = runMultiplexerCommand(spec.toConnectionParams(), multiplexer.listSessionsCommand())
+            val result =
+                runMultiplexerCommand(
+                    spec.toConnectionParams(),
+                    RemotePath.apply(spec.remotePath, multiplexer.type.id, multiplexer.listSessionsCommand()),
+                )
             if (!result.isSuccess) {
                 // The command reports *why* on stdout ("tmux executable not found"), so surface
                 // the whole output instead of a generic failure.
@@ -1105,6 +1121,7 @@ class TerminalSessionEngine(
         multiplexer = multiplexer,
         multiplexerSessionName = multiplexerSessionName,
         multiplexerCreateIfMissing = multiplexerCreateIfMissing,
+        remotePath = remotePath,
     )
 
     private fun runMultiplexerCommand(

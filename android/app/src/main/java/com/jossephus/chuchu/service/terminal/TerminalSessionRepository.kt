@@ -427,6 +427,7 @@ class TerminalSessionRepository private constructor(application: Application) {
             multiplexer = spec.multiplexer,
             multiplexerSessionName = spec.multiplexerSessionName,
             multiplexerCreateIfMissing = spec.multiplexerCreateIfMissing,
+            remotePath = spec.remotePath,
         )
         return tab
     }
@@ -484,6 +485,7 @@ class TerminalSessionRepository private constructor(application: Application) {
             multiplexer = spec.multiplexer,
             multiplexerSessionName = spec.multiplexerSessionName,
             multiplexerCreateIfMissing = spec.multiplexerCreateIfMissing,
+            remotePath = spec.remotePath,
         )
     }
 

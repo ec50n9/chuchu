@@ -29,4 +29,9 @@ data class HostProfile(
     // Only meaningful with a multiplexer: a bare SSH host has no "connected but idle" state.
     @ColumnInfo(defaultValue = "0")
     val autoConnect: Boolean = false,
+    // Extra PATH entries (colon separated, absolute) prepended to the multiplexer's exec-channel
+    // commands: exec runs without the account's rc files, so mise/nix/asdf shims are not on PATH
+    // there, and tmux/zmx would report "command not found".
+    @ColumnInfo(defaultValue = "NULL")
+    val remotePath: String? = null,
 )

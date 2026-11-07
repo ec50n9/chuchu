@@ -92,6 +92,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                         postConnectCommand = profile.postConnectCommand.orEmpty(),
                         multiplexer = profile.multiplexer,
                         autoConnect = profile.autoConnect,
+                        remotePath = profile.remotePath.orEmpty(),
                     )
             }
         }
@@ -190,6 +191,10 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
 
     fun updateAutoConnect(enabled: Boolean) {
         _form.value = _form.value.copy(autoConnect = enabled)
+    }
+
+    fun updateRemotePath(path: String) {
+        _form.value = _form.value.copy(remotePath = path)
     }
 
     fun updatePostConnectCommand(command: String) {
@@ -315,6 +320,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                             current.transport != Transport.Mosh && it?.runtimeSupported == true
                         },
                     autoConnect = current.autoConnect && current.multiplexer != null,
+                    remotePath = current.remotePath.trim().ifBlank { null },
                 )
             hostRepository.upsert(profile)
             onComplete()
@@ -339,6 +345,7 @@ data class AddServerForm(
     val postConnectCommand: String = "",
     val multiplexer: MultiplexerType? = null,
     val autoConnect: Boolean = false,
+    val remotePath: String = "",
 )
 
 fun AddServerForm.canSave(): Boolean {
