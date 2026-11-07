@@ -82,7 +82,7 @@ If you don't have nix installed, you will need
 
 1. setup tools
 - Android Studio - This will set up the needed Android SDK, Android NDK and Java runtime (JDK 17+).
-- Zig 0.15.2
+- Zig 0.17.0 (`mise install` reads it from `mise.toml`)
 2. build the native library
 
 Set `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`, then build the JNI library for Android arm64:
@@ -91,6 +91,8 @@ Set `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`, then build the JNI library for And
 zig build jni -Dtarget=aarch64-linux-android
 ```
 
+Note: nix pins NDK 29.0.13113456 in `devshell.nix`, while a local Android SDK usually has a
+newer or older one — pass whichever you have via `ANDROID_NDK_HOME`.
 That copies `libchuchu_jni.so` into `app/src/main/jniLibs/arm64-v8a/` (the `chuchu_jni` library
 name is kept from upstream; it is internal to the JNI bridge).
 

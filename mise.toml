@@ -1,0 +1,4 @@
+# Local toolchain for people who do not want to pull the 400 MB Android SDK through nix.
+# The flake stays the source of truth for CI; this only pins what `make build` needs.
+[tools]
+zig = "0.17.0"
