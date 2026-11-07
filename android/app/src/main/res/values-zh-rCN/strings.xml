@@ -387,6 +387,8 @@
     <string name="settings_disable_autocorrect_hint">适用于忽略标准提示的输入法；可能会关闭滑行输入</string>
     <string name="settings_stable_ime_resize">键盘弹收时稳定重排</string>
     <string name="settings_stable_ime_resize_hint">键盘弹收只重排一次终端，不再逐帧改变大小，避免远端提示符在动画过程中被反复重绘</string>
+    <string name="settings_hold_repaint_frames">全屏重绘时保持画面</string>
+    <string name="settings_hold_repaint_frames_hint">程序重绘屏幕时暂缓显示，不出现中间帧；如果会话看起来卡住就关掉它</string>
     <string name="settings_accessory_preview">预览</string>
     <string name="settings_no_accessory_keys_selected">未选择任何辅助键。</string>
     <string name="settings_accessory_drag_hint">长按预览里的按键，然后拖到想要的位置。</string>

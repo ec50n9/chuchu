@@ -406,6 +406,8 @@
     <string name="settings_disable_autocorrect_hint">for keyboards that ignore the standard hint; may disable glide typing</string>
     <string name="settings_stable_ime_resize">stable keyboard resize</string>
     <string name="settings_stable_ime_resize_hint">resize the terminal once per keyboard toggle instead of on every animation frame, so the remote prompt is not redrawn mid-animation</string>
+    <string name="settings_hold_repaint_frames">smooth full-screen repaints</string>
+    <string name="settings_hold_repaint_frames_hint">hold the screen while a program repaints it, so intermediate frames never show; turn off if a session seems to freeze</string>
     <string name="settings_accessory_preview">preview</string>
     <string name="settings_no_accessory_keys_selected">no accessory keys selected.</string>
     <string name="settings_accessory_drag_hint">long-press a key in preview, then drag to place it where you want.</string>
