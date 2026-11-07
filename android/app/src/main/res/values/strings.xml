@@ -242,6 +242,7 @@
     <string name="mux_attach">attach</string>
 
     <!-- Terminal session -->
+    <string name="terminal_key_passphrase">Key passphrase</string>
     <string name="terminal_files_unsupported">Files are not supported for local shell</string>
     <string name="terminal_connection_failed">Connection failed</string>
     <string name="terminal_hostkey_title">Verify host key</string>

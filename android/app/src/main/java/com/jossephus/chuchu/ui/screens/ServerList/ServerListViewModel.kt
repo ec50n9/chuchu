@@ -7,7 +7,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.jossephus.chuchu.data.db.AppDatabase
 import com.jossephus.chuchu.data.repository.HostRepository
+import com.jossephus.chuchu.data.repository.SettingsRepository
 import com.jossephus.chuchu.data.repository.SshKeyRepository
+import com.jossephus.chuchu.model.AuthMethod
 import com.jossephus.chuchu.model.HostProfile
 import com.jossephus.chuchu.service.terminal.HostLink
 import com.jossephus.chuchu.service.terminal.HostLinkStatus
@@ -32,6 +34,7 @@ class ServerListViewModel(
     private val db = AppDatabase.getInstance(application)
     private val hostRepository = HostRepository(db.hostProfileDao())
     private val sshKeyRepository = SshKeyRepository(db.sshKeyDao())
+    private val settingsRepository = SettingsRepository.getInstance(application)
     private val sessionRepository = TerminalSessionRepository.getInstance(application)
 
     private val searchQuery = MutableStateFlow("")
@@ -88,12 +91,13 @@ class ServerListViewModel(
         // Auto-connect is a per-host opt-in: link the host so its sessions show up without a tap.
         viewModelScope.launch {
             hostRepository.observeAll().collect { hosts ->
-                hosts.filter { it.autoConnect && it.multiplexer != null }
-                    .forEach { host ->
-                        if (autoConnectedHostIds.value.contains(host.id)) return@forEach
-                        autoConnectedHostIds.update { it + host.id }
-                        connect(host.id)
-                    }
+                hosts.filter {
+                    shouldAutoConnect(it, settingsRepository.requireAuthOnConnect.value)
+                }.forEach { host ->
+                    if (autoConnectedHostIds.value.contains(host.id)) return@forEach
+                    autoConnectedHostIds.update { it + host.id }
+                    connect(host.id)
+                }
             }
         }
     }
@@ -110,9 +114,9 @@ class ServerListViewModel(
     }
 
     /** Links the host and, on a host without a multiplexer, opens its first session. */
-    fun connect(hostId: Long) {
+    fun connect(hostId: Long, keyPassphrase: String? = null) {
         viewModelScope.launch {
-            val spec = specForHost(hostId) ?: return@launch
+            val spec = specForHost(hostId, keyPassphrase) ?: return@launch
             sessionRepository.connectHost(spec)?.let { _openSession.tryEmit(it.id) }
         }
     }
@@ -132,9 +136,9 @@ class ServerListViewModel(
         sessionRepository.hostLinks.value.keys.forEach(sessionRepository::refreshHost)
     }
 
-    fun newSession(hostId: Long) {
+    fun newSession(hostId: Long, keyPassphrase: String? = null) {
         viewModelScope.launch {
-            val spec = specForHost(hostId) ?: return@launch
+            val spec = specForHost(hostId, keyPassphrase) ?: return@launch
             clearActionError(hostId)
             if (!spec.usesRuntimeMultiplexer) {
                 _openSession.tryEmit(sessionRepository.openTab(spec).id)
@@ -162,7 +166,7 @@ class ServerListViewModel(
     }
 
     /** Opens (attaching first when needed) the session behind a card row. */
-    fun openSession(hostId: Long, row: SessionRow) {
+    fun openSession(hostId: Long, row: SessionRow, keyPassphrase: String? = null) {
         row.localSessionId?.let { sessionId ->
             sessionRepository.selectTab(sessionId)
             _openSession.tryEmit(sessionId)
@@ -170,7 +174,7 @@ class ServerListViewModel(
         }
         val remoteName = row.remoteName ?: return
         viewModelScope.launch {
-            val spec = specForHost(hostId) ?: return@launch
+            val spec = specForHost(hostId, keyPassphrase) ?: return@launch
             clearActionError(hostId)
             val tab =
                 sessionRepository.openTab(
@@ -189,13 +193,14 @@ class ServerListViewModel(
         sessionRepository.respondToHostKey(accepted)
     }
 
-    private suspend fun specForHost(hostId: Long): TabSpec? {
+    private suspend fun specForHost(hostId: Long, keyPassphrase: String?): TabSpec? {
         val host = hostRepository.getById(hostId) ?: return null
         val key = host.keyId?.let { sshKeyRepository.getById(it) }
         return TabSpec.fromHostProfile(
             host = host,
             publicKeyOpenSsh = key?.publicKeyOpenSsh.orEmpty(),
             privateKeyPem = key?.privateKeyPem.orEmpty(),
+            keyPassphrase = keyPassphrase ?: host.keyPassphrase,
         )
     }
 
@@ -255,3 +260,10 @@ class ServerListViewModel(
             }
     }
 }
+
+internal fun shouldAutoConnect(host: HostProfile, requireAuthOnConnect: Boolean): Boolean =
+    host.autoConnect &&
+        host.multiplexer != null &&
+        !requireAuthOnConnect &&
+        !host.requireAuthOnConnect &&
+        (host.authMethod != AuthMethod.KeyWithPassphrase || host.keyPassphrase.isNotBlank())

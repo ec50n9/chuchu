@@ -158,6 +158,16 @@ private fun TerminalViewModel.dispatchTextWithModifierState(
     }
 }
 
+internal fun displayedSessionAfterActiveChange(
+    routeSessionId: String?,
+    displayedSessionId: String?,
+    activeTabId: String?,
+    existingSessionIds: Set<String>,
+): String? {
+    if (routeSessionId == null || displayedSessionId !in existingSessionIds) return displayedSessionId
+    return activeTabId ?: displayedSessionId
+}
+
 @Composable
 private fun TerminalCustomActionsFab(
     groups: List<TerminalCustomKeyGroup>,
@@ -462,16 +472,15 @@ fun TerminalScreen(
         if (sessionId != null) vm.selectTab(sessionId)
     }
 
+    var displayedSessionId by remember(sessionId) { mutableStateOf(sessionId) }
 
-    // The last frame of the session, kept so the screen has something to show after the session
-    // itself is gone: the exit output is usually the point of looking. Only this screen's own
-    // session feeds it — closing a session hands the active slot to another one, and that one's
-    // frames must not replace what this screen is showing.
+    // Keep the last frame of the displayed session. The active id changes before this effect runs,
+    // so a closed session cannot replace its frozen frame with the repository's fallback tab.
     var lastSnapshot by remember { mutableStateOf<TerminalSnapshot?>(null) }
-    LaunchedEffect(activeTabId, sessionState.snapshot) {
+    LaunchedEffect(displayedSessionId, sessionState.snapshot) {
         val isThisScreensSession =
-            if (sessionId != null) {
-                activeTabId == sessionId
+            if (displayedSessionId != null) {
+                activeTabId == displayedSessionId
             } else {
                 activeTab?.spec?.transport == Transport.LocalShell
             }
@@ -486,11 +495,9 @@ fun TerminalScreen(
         }
     val hasTabsForHost = hostSessionIds.isNotEmpty()
 
-    // One rule for both routes: once the session this screen was opened for is gone, stay put and
-    // show what it left behind — the app-side session is already closed by then.
     val sessionGone =
         when {
-            sessionId != null -> tabs.none { it.id == sessionId }
+            displayedSessionId != null -> tabs.none { it.id == displayedSessionId }
             openLocalShell -> hasSeenTabsForHost && !hasTabsForHost
             else -> false
         }
@@ -505,8 +512,17 @@ fun TerminalScreen(
         return
     }
 
-    val currentHostName = activeTab?.spec?.displayName?.takeIf { it.isNotBlank() }
-        ?: activeTab?.spec?.host?.takeIf { it.isNotBlank() }
+    // This effect leaves composition as soon as the displayed session is gone. That prevents the
+    // repository's fallback selection from turning an ended screen into another live session.
+    LaunchedEffect(activeTabId) {
+        displayedSessionId =
+            displayedSessionAfterActiveChange(
+                routeSessionId = sessionId,
+                displayedSessionId = displayedSessionId,
+                activeTabId = activeTabId,
+                existingSessionIds = tabs.mapTo(mutableSetOf()) { it.id },
+            )
+    }
 
     LaunchedEffect(openLocalShell, hasTabsForHost) {
         // Only the local-shell route has to remember that it once had a session: its session has no

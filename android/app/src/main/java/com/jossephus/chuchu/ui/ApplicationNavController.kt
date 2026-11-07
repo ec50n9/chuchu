@@ -1,14 +1,18 @@
 package com.jossephus.chuchu.ui
 
 import android.app.Application
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -21,6 +25,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.jossephus.chuchu.R
 import com.jossephus.chuchu.data.repository.SettingsRepository
+import com.jossephus.chuchu.model.AuthMethod
+import com.jossephus.chuchu.ui.components.ChuDialog
+import com.jossephus.chuchu.ui.components.ChuTextField
 import com.jossephus.chuchu.ui.screens.AddServer.AddServerScreen
 import com.jossephus.chuchu.ui.screens.AddServer.AddServerViewModel
 import com.jossephus.chuchu.ui.screens.Keys.KeysViewModel
@@ -71,6 +78,35 @@ fun ApplicationNavController() {
             val hostRuntime by vm.hostRuntime.collectAsStateWithLifecycle()
             val hostKeyPrompt by vm.hostKeyPrompt.collectAsStateWithLifecycle()
             val searchQuery by vm.search.collectAsStateWithLifecycle()
+            var pendingPassphraseAction by remember { mutableStateOf<((String) -> Unit)?>(null) }
+            var passphraseInput by remember { mutableStateOf("") }
+
+            fun withConnectionVerification(hostId: Long, action: () -> Unit) {
+                val hostRequiresAuth =
+                    hosts.firstOrNull { it.id == hostId }?.requireAuthOnConnect == true
+                if (!requireAuthOnConnect && !hostRequiresAuth) {
+                    action()
+                    return
+                }
+                requireUserVerification(
+                    context = context,
+                    title = context.getString(R.string.verification_connect_title),
+                    subtitle = context.getString(R.string.verification_connect_subtitle),
+                ) { result ->
+                    if (result == VerificationResult.Success) action()
+                }
+            }
+
+            fun withKeyPassphrase(hostId: Long, action: (String?) -> Unit) {
+                val host = hosts.firstOrNull { it.id == hostId } ?: return
+                if (host.authMethod == AuthMethod.KeyWithPassphrase && host.keyPassphrase.isBlank()) {
+                    passphraseInput = ""
+                    pendingPassphraseAction = { passphrase -> action(passphrase) }
+                } else {
+                    action(null)
+                }
+            }
+
             LaunchedEffect(vm) {
                 // Back on the list, ask every linked host what it has now: sessions are created and
                 // killed from the terminal, so the rows read on connect go stale.
@@ -108,34 +144,24 @@ fun ApplicationNavController() {
                     },
                 onEditServer = { id -> navController.navigate("servers/edit/$id") },
                 onConnectServer = { id ->
-                    val hostRequiresAuth = hosts.firstOrNull { it.id == id }?.requireAuthOnConnect == true
-                    if (!requireAuthOnConnect && !hostRequiresAuth) {
-                        vm.connect(id)
+                    withConnectionVerification(id) {
+                        withKeyPassphrase(id) { passphrase -> vm.connect(id, passphrase) }
+                    }
+                },
+                onOpenSession = { hostId, row ->
+                    if (row.localSessionId != null) {
+                        vm.openSession(hostId, row)
                     } else {
-                        requireUserVerification(
-                            context = context,
-                            title = context.getString(R.string.verification_connect_title),
-                            subtitle = context.getString(R.string.verification_connect_subtitle),
-                        ) { result ->
-                            if (result == VerificationResult.Success) vm.connect(id)
+                        withConnectionVerification(hostId) {
+                            withKeyPassphrase(hostId) { passphrase ->
+                                vm.openSession(hostId, row, passphrase)
+                            }
                         }
                     }
                 },
-                // An already-open session is already authenticated, so opening its row must not
-                // re-prompt; a new session authenticates again, so it goes through the gate.
-                onOpenSession = { hostId, row -> vm.openSession(hostId, row) },
                 onNewSession = { id ->
-                    val hostRequiresAuth = hosts.firstOrNull { it.id == id }?.requireAuthOnConnect == true
-                    if (!requireAuthOnConnect && !hostRequiresAuth) {
-                        vm.newSession(id)
-                    } else {
-                        requireUserVerification(
-                            context = context,
-                            title = context.getString(R.string.verification_connect_title),
-                            subtitle = context.getString(R.string.verification_connect_subtitle),
-                        ) { result ->
-                            if (result == VerificationResult.Success) vm.newSession(id)
-                        }
+                    withConnectionVerification(id) {
+                        withKeyPassphrase(id) { passphrase -> vm.newSession(id, passphrase) }
                     }
                 },
                 onRefreshSessions = vm::refresh,
@@ -143,6 +169,32 @@ fun ApplicationNavController() {
                 onDeleteServer = vm::deleteServer,
                 onOpenSettings = { navController.navigate("settings") },
             )
+
+            val passphraseAction = pendingPassphraseAction
+            if (passphraseAction != null) {
+                ChuDialog(
+                    title = context.getString(R.string.terminal_key_passphrase),
+                    confirmLabel = context.getString(R.string.dialog_confirm_connect),
+                    onConfirm = {
+                        pendingPassphraseAction = null
+                        passphraseAction(passphraseInput)
+                        passphraseInput = ""
+                    },
+                    onDismiss = {
+                        pendingPassphraseAction = null
+                        passphraseInput = ""
+                    },
+                ) {
+                    ChuTextField(
+                        value = passphraseInput,
+                        onValueChange = { passphraseInput = it },
+                        label = context.getString(R.string.field_passphrase),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
         composable("settings") {
             val settingsRepo = SettingsRepository.getInstance(application)

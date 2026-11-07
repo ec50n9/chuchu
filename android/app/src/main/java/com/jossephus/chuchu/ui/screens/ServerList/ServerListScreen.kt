@@ -252,8 +252,7 @@ fun ServerListScreen(
                             onLongPress = { selectedHostId = host.id },
                             onCancelSelection = { selectedHostId = null },
                             onDeleteSelection = {
-                                val is_selected_connected = host.id in connectedHostIds
-                                if (is_selected_connected) {
+                                if (isConnected) {
                                     Toast.makeText(
                                         context,
                                         disconnectBeforeDeleteMessage,

@@ -232,6 +232,7 @@
     <string name="mux_attach">挂载</string>
 
     <!-- Terminal session -->
+    <string name="terminal_key_passphrase">密钥口令</string>
     <string name="terminal_files_unsupported">本地 Shell 不支持文件管理</string>
     <string name="terminal_connection_failed">连接失败</string>
     <string name="terminal_hostkey_title">验证主机密钥</string>
