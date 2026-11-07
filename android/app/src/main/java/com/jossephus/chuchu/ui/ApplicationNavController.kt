@@ -110,6 +110,9 @@ fun ApplicationNavController() {
                         }
                     }
                 },
+                // The session is already authenticated by the repository, so jumping
+                // to an open tab must not re-prompt for verification.
+                onOpenSession = { id -> navController.navigate("terminal/$id") },
                 onDeleteServer = vm::deleteServer,
                 onOpenSettings = { navController.navigate("settings") },
             )

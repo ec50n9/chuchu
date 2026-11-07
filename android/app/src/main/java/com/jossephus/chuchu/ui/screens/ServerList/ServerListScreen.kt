@@ -9,6 +9,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -53,7 +55,10 @@ import kotlinx.coroutines.launch
 import com.jossephus.chuchu.R
 import com.jossephus.chuchu.model.HostProfile
 import com.jossephus.chuchu.model.Transport
+import com.jossephus.chuchu.service.terminal.TabSession
 import com.jossephus.chuchu.service.terminal.TerminalSessionRepository
+import com.jossephus.chuchu.ui.screens.Terminal.statusDotColor
+import com.jossephus.chuchu.ui.screens.Terminal.terminalTabDisplayLabel
 import com.jossephus.chuchu.ui.components.ChuButton
 import com.jossephus.chuchu.ui.components.ChuButtonVariant
 import com.jossephus.chuchu.ui.components.ChuCard
@@ -74,6 +79,7 @@ fun ServerListScreen(
     onOpenLocalShell: () -> Unit,
     onEditServer: (Long) -> Unit,
     onConnectServer: (Long) -> Unit,
+    onOpenSession: (Long) -> Unit,
     onDeleteServer: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -219,11 +225,18 @@ fun ServerListScreen(
                 } else {
                     items(hosts, key = { it.id }) { host ->
                         val isConnected = host.id in connectedHostIds
+                        val hostSessions = openTabs.filter { it.spec.hostId == host.id }
                         val disconnectBeforeDeleteMessage =
                             stringResource(R.string.server_list_disconnect_before_delete)
                         HostCard(
                             host = host,
                             isConnected = isConnected,
+                            sessions = hostSessions,
+                            onOpenSession = { tabId ->
+                                selectedHostId = null
+                                sessionRepo.selectTab(tabId)
+                                onOpenSession(host.id)
+                            },
                             isSelected = selectedHostId == host.id,
                             onLongPress = { selectedHostId = host.id },
                             onCancelSelection = { selectedHostId = null },
@@ -419,6 +432,8 @@ private fun LocalShellCard(
 private fun HostCard(
     host: HostProfile,
     isConnected: Boolean,
+    sessions: List<TabSession>,
+    onOpenSession: (String) -> Unit,
     isSelected: Boolean,
     onLongPress: () -> Unit,
     onCancelSelection: () -> Unit,
@@ -482,14 +497,12 @@ private fun HostCard(
         }
 
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(114.dp),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             if (isConnected) {
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .matchParentSize()
                         .background(colors.warning.copy(alpha = 0.82f))
                         .padding(end = 14.dp),
                 ) {
@@ -505,7 +518,7 @@ private fun HostCard(
             Box(
                 modifier = Modifier
                     .offset { IntOffset(swipeOffsetX.value.roundToInt(), 0) }
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .pointerInput(host.id, isConnected) {
                         if (!isConnected) {
                             return@pointerInput
@@ -533,7 +546,8 @@ private fun HostCard(
             ) {
                 ChuCard(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .fillMaxWidth()
+                        .heightIn(min = 114.dp)
                         .combinedClickable(
                             onClick = onConnect,
                             onLongClick = onLongPress,
@@ -548,18 +562,70 @@ private fun HostCard(
                     Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 ChuText(
                                     if (isConnected) "● " else "○ ",
                                     style = typography.title,
                                     color = if (isConnected) colors.success else colors.textMuted,
                                 )
-                                ChuText(host.name, style = typography.title)
+                                ChuText(
+                                    host.name,
+                                    style = typography.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ChuButton(
+                                    onClick = onEdit,
+                                    variant = ChuButtonVariant.Ghost,
+                                    bracketed = true,
+                                    borderColor = colors.textMuted,
+                                    testTag = "host_edit_${host.id}",
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                ) {
+                                    ChuText(
+                                        stringResource(R.string.action_edit),
+                                        style = typography.label,
+                                        color = colors.textMuted,
+                                    )
+                                }
+                                ChuButton(
+                                    onClick = {
+                                        if (isConnected) onDisconnect() else onConnect()
+                                    },
+                                    variant = ChuButtonVariant.Outlined,
+                                    bracketed = true,
+                                    borderColor = if (isConnected) colors.warning else colors.accentSecondary,
+                                    testTag = "host_connect_${host.id}",
+                                    contentDescription =
+                                        if (isConnected) {
+                                            stringResource(R.string.server_list_cd_disconnect_from, host.name)
+                                        } else {
+                                            stringResource(R.string.server_list_cd_connect_to, host.name)
+                                        },
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                ) {
+                                    ChuText(
+                                        if (isConnected) {
+                                            stringResource(R.string.action_disconnect)
+                                        } else {
+                                            stringResource(R.string.action_connect)
+                                        },
+                                        style = typography.label,
+                                        color = if (isConnected) colors.warning else colors.accentSecondary,
+                                    )
+                                }
                             }
                         }
+
                         Spacer(modifier = Modifier.height(2.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -581,46 +647,14 @@ private fun HostCard(
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            ChuButton(
-                                onClick = onEdit,
-                                variant = ChuButtonVariant.Ghost,
-                                bracketed = true,
-                                borderColor = colors.textMuted,
-                                testTag = "host_edit_${host.id}",
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                ChuText(
-                                    stringResource(R.string.action_edit),
-                                    style = typography.label,
-                                    color = colors.textMuted,
-                                )
-                            }
-                            ChuButton(
-                                onClick = {
-                                    if (isConnected) onDisconnect() else onConnect()
-                                },
-                                variant = ChuButtonVariant.Outlined,
-                                bracketed = true,
-                                borderColor = if (isConnected) colors.warning else colors.accentSecondary,
-                                testTag = "host_connect_${host.id}",
-                                contentDescription =
-                                    if (isConnected) {
-                                        stringResource(R.string.server_list_cd_disconnect_from, host.name)
-                                    } else {
-                                        stringResource(R.string.server_list_cd_connect_to, host.name)
-                                    },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                ChuText(
-                                    if (isConnected) {
-                                        stringResource(R.string.action_disconnect)
-                                    } else {
-                                        stringResource(R.string.action_connect)
-                                    },
-                                    style = typography.label,
-                                    color = if (isConnected) colors.warning else colors.accentSecondary,
+
+                        // Open sessions of this host: one tap jumps straight to that tab.
+                        if (sessions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            sessions.forEach { session ->
+                                HostSessionRow(
+                                    tab = session,
+                                    onClick = { onOpenSession(session.id) },
                                 )
                             }
                         }
@@ -628,5 +662,32 @@ private fun HostCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun HostSessionRow(tab: TabSession, onClick: () -> Unit) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    val state by tab.sessionState.collectAsStateWithLifecycle()
+    val label = state.title?.takeIf { it.isNotBlank() } ?: terminalTabDisplayLabel(tab)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ChuText("└", style = typography.labelSmall, color = colors.textMuted)
+        ChuText("●", style = typography.labelSmall, color = statusDotColor(state.status, colors))
+        ChuText(
+            label,
+            style = typography.body,
+            color = colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }

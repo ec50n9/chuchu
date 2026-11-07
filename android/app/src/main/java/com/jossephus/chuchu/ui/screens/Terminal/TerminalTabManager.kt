@@ -463,7 +463,7 @@ fun TerminalTabManager(
 /**
  * Status dot color matching the one used in [TerminalTabStrip].
  */
-private fun statusDotColor(status: SessionStatus, colors: ChuColorPalette): Color = when (status) {
+internal fun statusDotColor(status: SessionStatus, colors: ChuColorPalette): Color = when (status) {
     SessionStatus.Connected -> colors.success
     SessionStatus.Connecting,
     SessionStatus.Reconnecting -> colors.accent
