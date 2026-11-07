@@ -33,6 +33,7 @@ with pkgs;
     packages = [
       android-sdk
       gradle
+      gnumake
       jdk21
       zigpkgs."0.17.0"
       ktfmt

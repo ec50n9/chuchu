@@ -70,45 +70,28 @@ Download the APK from [releases](https://github.com/ec50n9/chuchu/releases).
 - `libssh2` + `openssl` for the current native SSH path
 - Room for local data storage
 
-### Development - Prerequisites
+### Development
 
-If you have nix installed, the following three steps will get you started
-
-1. nix develop - will set you up with everything you will need.
-2. running 'make build' will build the native code needed
-3. running 'make app' will build the apk and install it in a connected device.
-
-If you don't have nix installed, you will need
-
-1. setup tools
-- Android Studio - This will set up the needed Android SDK, Android NDK and Java runtime (JDK 17+).
-- Zig 0.17.0 (`mise install` reads it from `mise.toml`)
-2. build the native library
-
-Set `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`, then build the JNI library for Android arm64:
+nix is the only supported toolchain: it pins zig 0.17.0, JDK, gradle and the Android
+SDK/NDK (29.0.13113456), and it is what CI uses, so a local build is the release build.
 
 ```sh
-zig build jni -Dtarget=aarch64-linux-android
+nix develop            # android SDK/NDK, JDK, zig, gradle, ktfmt/ktlint, node/pnpm
+make build             # native libchuchu_jni.so for arm64/armv7/x86_64
+cd android && ./gradlew installDebug
 ```
 
-Note: nix pins NDK 29.0.13113456 in `devshell.nix`, while a local Android SDK usually has a
-newer or older one — pass whichever you have via `ANDROID_NDK_HOME`.
-That copies `libchuchu_jni.so` into `app/src/main/jniLibs/arm64-v8a/` (the `chuchu_jni` library
-name is kept from upstream; it is internal to the JNI bridge).
+Inside the devshell `ANDROID_NDK_HOME`, `ANDROID_HOME` and `JAVA_HOME` are already set; do not
+export your own, that is exactly how local and CI drift apart.
 
-3. From android studio run
-```sh
-./gradlew assembleDebug
-```
+The devshell is a one-time ~1 GB download (mostly the NDK). After that `nix develop` is instant.
+Avoid building the native library with a system zig or a system NDK — the `.so` would be compiled
+against different headers than the one CI ships.
 
-For a manual debug APK, run the native build first, then assemble the app:
+`make app` builds, installs and launches the app on a connected device.
 
-```sh
-make build
-cd android && ./gradlew assembleDebug
-```
-
-The APK should include `lib/arm64-v8a/libchuchu_jni.so`; without it native SSH/key generation will fail on device.
+The APK must include `lib/arm64-v8a/libchuchu_jni.so`; without it native SSH/key generation fails
+on device. The `chuchu_jni` library name is kept from upstream — it is internal to the JNI bridge.
 
 ## Name
 
