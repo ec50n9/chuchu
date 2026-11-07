@@ -202,6 +202,7 @@
     <string name="tabs_header">会话</string>
     <string name="session_new">+ 新建会话</string>
     <string name="session_listing">正在列出会话…</string>
+    <string name="session_creating">正在创建会话…</string>
     <string name="session_ended">会话已结束</string>
     <string name="session_none">还没有会话</string>
     <string name="tab_new">+ 新建</string>

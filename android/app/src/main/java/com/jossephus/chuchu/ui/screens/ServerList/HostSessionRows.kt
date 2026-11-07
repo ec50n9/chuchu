@@ -18,6 +18,8 @@ data class SessionRow(
 data class HostRuntime(
     val linked: Boolean = false,
     val loading: Boolean = false,
+    /** A "+ new session" for this host is still resolving its name over SSH. */
+    val creating: Boolean = false,
     val error: String? = null,
     val rows: List<SessionRow> = emptyList(),
 )

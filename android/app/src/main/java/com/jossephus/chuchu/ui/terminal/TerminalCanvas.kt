@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jossephus.chuchu.service.terminal.TerminalSnapshot
 import com.jossephus.chuchu.ui.theme.LocalChuFont
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -49,6 +50,23 @@ import kotlin.math.round
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * Every entry into the terminal screen is a fresh composition, so `remember` alone re-parsed the
+ * symbol fallbacks (1.2 MB and 2.4 MB) on the main thread each time a session was opened. The parsed
+ * faces are keyed by font resource and kept for the process, so only the first terminal screen after
+ * a cold start pays for them.
+ */
+private object CachedTypefaces {
+    private val cache = ConcurrentHashMap<Int, Typeface>()
+
+    fun get(context: android.content.Context, fontResId: Int, fallback: Typeface): Typeface =
+        cache[fontResId]
+            ?: runCatching { ResourcesCompat.getFont(context, fontResId) }
+                .getOrNull()
+                ?.also { cache[fontResId] = it }
+            ?: fallback
+}
 
 @Composable
 fun TerminalCanvas(
@@ -94,22 +112,21 @@ fun TerminalCanvas(
     val doubleTapTimeoutMillis = remember { ViewConfiguration.getDoubleTapTimeout().toLong() }
     val doubleTapSlopPx = remember(androidViewConfiguration) { androidViewConfiguration.scaledDoubleTapSlop.toFloat() }
     val primaryTypeface = remember(context, fontOption) {
-        runCatching {
-            ResourcesCompat.getFont(context, fontOption.regularFontResId)
-                ?: Typeface.MONOSPACE
-        }.getOrDefault(Typeface.MONOSPACE)
+        CachedTypefaces.get(context, fontOption.regularFontResId, Typeface.MONOSPACE)
     }
     val symbolsTypeface = remember(context) {
-        runCatching {
-            ResourcesCompat.getFont(context, R.font.symbols_nerd_font_mono_regular)
-                ?: Typeface.MONOSPACE
-        }.getOrDefault(Typeface.MONOSPACE)
+        CachedTypefaces.get(
+            context,
+            R.font.symbols_nerd_font_mono_regular,
+            Typeface.MONOSPACE,
+        )
     }
     val fallbackTypeface = remember(context) {
-        runCatching {
-            ResourcesCompat.getFont(context, R.font.noto_sans_symbols2_regular)
-                ?: Typeface.DEFAULT
-        }.getOrDefault(Typeface.DEFAULT)
+        CachedTypefaces.get(
+            context,
+            R.font.noto_sans_symbols2_regular,
+            Typeface.DEFAULT,
+        )
     }
     val primaryTextPaint = remember(primaryTypeface, fontSizePx) {
         Paint().apply {

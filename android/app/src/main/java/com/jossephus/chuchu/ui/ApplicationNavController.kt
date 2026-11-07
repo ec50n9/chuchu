@@ -1,6 +1,11 @@
 package com.jossephus.chuchu.ui
 
 import android.app.Application
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -66,7 +71,23 @@ fun ApplicationNavController() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    NavHost(navController = navController, startDestination = "servers") {
+    // The library default is a 700ms crossfade. Between two screens that share a background it reads
+    // as no animation at all, and it is over before the terminal has anything to show. A short slide
+    // makes the screen change legible and finishes while the connection is still being made.
+    NavHost(
+        navController = navController,
+        startDestination = "servers",
+        enterTransition = {
+            slideInHorizontally(animationSpec = tween(NAV_SLIDE_MS)) { it / 8 } +
+                fadeIn(animationSpec = tween(NAV_SLIDE_MS))
+        },
+        exitTransition = { fadeOut(animationSpec = tween(NAV_FADE_MS)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(NAV_SLIDE_MS)) },
+        popExitTransition = {
+            slideOutHorizontally(animationSpec = tween(NAV_SLIDE_MS)) { it / 8 } +
+                fadeOut(animationSpec = tween(NAV_FADE_MS))
+        },
+    ) {
         composable("servers") {
             val vm: ServerListViewModel =
                 viewModel(factory = ServerListViewModel.factory(application))
@@ -352,3 +373,8 @@ fun ApplicationNavController() {
         }
     }
 }
+
+private const val NAV_SLIDE_MS = 220
+
+/** The outgoing screen leaves faster than the incoming one arrives; matching durations smear. */
+private const val NAV_FADE_MS = 140

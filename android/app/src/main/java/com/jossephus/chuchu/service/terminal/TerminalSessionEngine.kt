@@ -250,7 +250,7 @@ class TerminalSessionEngine(
                     )
                 return@launch
             }
-            val multiplexerAvailability = checkMultiplexerAvailability(params)
+            val multiplexerAvailability = checkMultiplexerAvailabilityCached(params)
             val multiplexerError = multiplexerAvailabilityErrorMessage(
                 availability = multiplexerAvailability,
                 selectedType = params.multiplexer,
@@ -495,6 +495,27 @@ class TerminalSessionEngine(
     suspend fun checkMultiplexerAvailability(spec: TabSpec): MultiplexerAvailability =
         withContext(dispatcher) { checkMultiplexerAvailability(spec.toConnectionParams()) }
 
+    /**
+     * Every probe opens its own SSH connection, so opening a second session on a host would pay for
+     * the same exec channel again. A positive answer is cached for the process, mirroring how
+     * [resolveTerminalType] caches its probe; negatives stay uncached so a fixed host retries.
+     */
+    private fun checkMultiplexerAvailabilityCached(
+        params: ConnectionParams
+    ): MultiplexerAvailability {
+        val type = params.multiplexer ?: return MultiplexerAvailability.Available
+        val key = multiplexerAvailabilityKey(params, type)
+        if (multiplexerAvailabilityCache.containsKey(key)) return MultiplexerAvailability.Available
+        val availability = checkMultiplexerAvailability(params)
+        if (availability == MultiplexerAvailability.Available) {
+            multiplexerAvailabilityCache[key] = true
+        }
+        return availability
+    }
+
+    private fun multiplexerAvailabilityKey(params: ConnectionParams, type: MultiplexerType): String =
+        "${params.username}@${params.host}:${params.port}:${type.name}"
+
     private fun checkMultiplexerAvailability(params: ConnectionParams): MultiplexerAvailability {
         val type = params.multiplexer ?: return MultiplexerAvailability.Available
         val multiplexer = MultiplexerRegistry.forType(type)
@@ -560,19 +581,8 @@ class TerminalSessionEngine(
         if (spec.transport == Transport.Mosh || spec.transport == Transport.LocalShell) {
             throw IllegalStateException("${type.label} is not supported for ${spec.transport} connections")
         }
-        when (val availability = checkMultiplexerAvailability(spec.copy(multiplexer = type))) {
-            MultiplexerAvailability.Available -> Unit
-            is MultiplexerAvailability.Missing -> throw IllegalStateException(
-                "${availability.multiplexer.label} executable was not found on the remote host",
-            )
-            is MultiplexerAvailability.UnsupportedMultiplexer -> throw IllegalStateException(
-                "${availability.multiplexer.label} is not supported yet",
-            )
-            is MultiplexerAvailability.UnsupportedTransport -> throw IllegalStateException(
-                "${type.label} is not supported for ${availability.transport}",
-            )
-            is MultiplexerAvailability.Error -> throw IllegalStateException(availability.message)
-        }
+        // No separate availability probe: listing the sessions already fails with the remote's own
+        // words ("tmux: not found"), and it is one SSH round trip instead of two.
         val remoteSessions = listMultiplexerSessions(spec.copy(multiplexer = type))
         val existingName = spec.multiplexerSessionName?.takeIf { it.isNotBlank() }
         if (existingName != null && spec.multiplexerCreateIfMissing) return@withContext existingName
@@ -1341,6 +1351,12 @@ class TerminalSessionEngine(
         // user@host:port -> TERM. Every tab builds its own engine, so this is shared so that a
         // second tab to the same account skips the probe.
         private val terminalTypeCache = ConcurrentHashMap<String, String>()
+
+        // Same idea for "does this host have the multiplexer executable": the answer is a full SSH
+        // connect plus an exec channel, and it does not change between sessions on one host.
+        // shortcut: a remote that loses its multiplexer mid-process keeps the cached answer until
+        // the app restarts; the failing startup command then reports it from the remote side.
+        private val multiplexerAvailabilityCache = ConcurrentHashMap<String, Boolean>()
     }
 
     // Read-loop poll interval as a function of how long the session has been idle:

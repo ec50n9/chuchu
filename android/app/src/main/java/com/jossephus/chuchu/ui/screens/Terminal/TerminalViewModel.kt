@@ -9,7 +9,6 @@ import com.jossephus.chuchu.R
 import com.jossephus.chuchu.model.Transport
 import com.jossephus.chuchu.service.multiplexer.MultiplexerRegistry
 import com.jossephus.chuchu.service.multiplexer.RemoteMultiplexerSession
-import com.jossephus.chuchu.service.ssh.TailscaleStatusChecker
 import com.jossephus.chuchu.service.terminal.HostKeyPrompt
 import com.jossephus.chuchu.service.terminal.SessionState
 import com.jossephus.chuchu.service.terminal.TabSession
@@ -49,7 +48,6 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalCoroutinesApi::class)
 class TerminalViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
-    private val tailscaleStatusChecker = TailscaleStatusChecker(application)
     private val sessionRepository = TerminalSessionRepository.getInstance(application)
 
     // Reconnecting an attached session is the only multiplexer recovery left: opening one from the
@@ -62,9 +60,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     private var multiplexerActionGeneration = 0L
     private var multiplexerSessionListGeneration = 0L
     private var multiplexerDuplicateInFlight = false
-
-    private val _tailscaleActive = MutableStateFlow(tailscaleStatusChecker.isActive())
-    val tailscaleActive: StateFlow<Boolean> = _tailscaleActive.asStateFlow()
 
     val tabs: StateFlow<List<TabSession>> = sessionRepository.tabs
     val activeTabId: StateFlow<String?> = sessionRepository.activeTabId
@@ -109,7 +104,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openTab(spec: TabSpec): TabSession {
-        refreshTailscaleStatus()
         return sessionRepository.openTab(spec)
     }
 
@@ -261,7 +255,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
 
     private fun reconnectTabWithSpec(tabId: String, spec: TabSpec): Boolean {
         val tab = sessionRepository.tabs.value.firstOrNull { it.id == tabId } ?: return false
-        refreshTailscaleStatus()
         tab.spec = spec
         sessionRepository.reconnectTab(tab)
         return true
@@ -384,7 +377,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun reconnect() {
-        refreshTailscaleStatus()
         val tab = sessionRepository.activeTab.value ?: return
         if (tab.spec.usesRuntimeMultiplexer) {
             initiateMultiplexerReconnect(tab)
@@ -602,10 +594,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     private fun formatMtime(epochSeconds: Long): String {
         val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
         return formatter.format(Date(epochSeconds * 1000L))
-    }
-
-    fun refreshTailscaleStatus() {
-        _tailscaleActive.value = tailscaleStatusChecker.isActive()
     }
 
     fun onCanvasSizeChanged(

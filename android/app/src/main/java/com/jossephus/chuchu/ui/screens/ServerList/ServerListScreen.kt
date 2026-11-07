@@ -688,7 +688,9 @@ private fun HostCard(
                                     onClick = { onOpenSession(row) },
                                 )
                             }
-                            if (runtime.loading) {
+                            if (runtime.creating) {
+                                HostSessionRowPlaceholder(stringResource(R.string.session_creating))
+                            } else if (runtime.loading) {
                                 HostSessionRowPlaceholder(stringResource(R.string.session_listing))
                             } else if (runtime.rows.isEmpty() && runtime.error == null) {
                                 HostSessionRowPlaceholder(stringResource(R.string.session_none))

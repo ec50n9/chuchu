@@ -39,6 +39,7 @@ class ServerListViewModel(
 
     private val searchQuery = MutableStateFlow("")
     private val actionErrors = MutableStateFlow<Map<Long, String>>(emptyMap())
+    private val creatingHostIds = MutableStateFlow<Set<Long>>(emptySet())
     private val autoConnectedHostIds = MutableStateFlow<Set<Long>>(emptySet())
 
     val hosts: StateFlow<List<HostProfile>> = hostRepository.observeAll()
@@ -63,7 +64,8 @@ class ServerListViewModel(
             sessionRepository.hostLinks,
             sessionRepository.tabs,
             actionErrors,
-        ) { hosts, links, tabs, errors ->
+            creatingHostIds,
+        ) { hosts, links, tabs, errors, creating ->
             hosts.associate { host ->
                 host.id to
                     runtimeFor(
@@ -71,6 +73,7 @@ class ServerListViewModel(
                         link = links[host.id],
                         hostTabs = tabs.filter { it.spec.hostId == host.id },
                         actionError = errors[host.id],
+                        creating = creating.contains(host.id),
                     )
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -144,24 +147,33 @@ class ServerListViewModel(
                 _openSession.tryEmit(sessionRepository.openTab(spec).id)
                 return@launch
             }
-            runCatching {
-                val name =
-                    sessionRepository.resolveMultiplexerSessionName(
-                        spec = spec.copy(
-                            multiplexerSessionName = null,
-                            multiplexerCreateIfMissing = true,
-                        ),
-                        // "+ new session" always makes a new one: a detached chuchu-N is already a
-                        // row on the card, and reusing it here made the button attach to it instead.
-                        reuseDetachedChuchuSession = false,
+            // Resolving a free name costs an SSH round trip; show that work on the card instead of
+            // a button that looks like it did nothing until the terminal finally appears.
+            if (hostId in creatingHostIds.value) return@launch
+            creatingHostIds.update { it + hostId }
+            try {
+                runCatching {
+                    val name =
+                        sessionRepository.resolveMultiplexerSessionName(
+                            spec = spec.copy(
+                                multiplexerSessionName = null,
+                                multiplexerCreateIfMissing = true,
+                            ),
+                            // "+ new session" always makes a new one: a detached chuchu-N is already a
+                            // row on the card, and reusing it here made the button attach to it
+                            // instead.
+                            reuseDetachedChuchuSession = false,
+                        )
+                    sessionRepository.openTab(
+                        spec.copy(multiplexerSessionName = name, multiplexerCreateIfMissing = true)
                     )
-                sessionRepository.openTab(
-                    spec.copy(multiplexerSessionName = name, multiplexerCreateIfMissing = true)
-                )
-            }.onSuccess { tab ->
-                // The host's list is re-read once this session is actually attached (repository).
-                _openSession.tryEmit(tab.id)
-            }.onFailure { error -> setActionError(hostId, error) }
+                }.onSuccess { tab ->
+                    // The host's list is re-read once this session is actually attached (repository).
+                    _openSession.tryEmit(tab.id)
+                }.onFailure { error -> setActionError(hostId, error) }
+            } finally {
+                creatingHostIds.update { it - hostId }
+            }
         }
     }
 
@@ -209,6 +221,7 @@ class ServerListViewModel(
         link: HostLink?,
         hostTabs: List<TabSession>,
         actionError: String?,
+        creating: Boolean,
     ): HostRuntime {
         if (host.multiplexer == null) {
             return HostRuntime(
@@ -224,6 +237,7 @@ class ServerListViewModel(
         return HostRuntime(
             linked = status != HostLinkStatus.Offline,
             loading = status == HostLinkStatus.Connecting,
+            creating = creating,
             error = actionError ?: link?.error.takeIf { status == HostLinkStatus.Error },
             rows =
                 multiplexerSessionRows(
