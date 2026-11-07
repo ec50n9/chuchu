@@ -89,6 +89,9 @@ pub fn build(b: *std.Build) void {
     lib.root_module.addCMacro("OPENSSL_NO_BF", "1");
     lib.root_module.addCMacro("HAVE_CONFIG_H", "1");
     lib.root_module.addCMacro("LIBSSH2_OPENSSL", "1");
+    // TUI full repaints push megabytes of highly repetitive escape sequences;
+    // the final binary already links libz for mosh, so compression is cheap.
+    lib.root_module.addCMacro("LIBSSH2_HAVE_ZLIB", "1");
     lib.root_module.addCSourceFiles(.{
         .files = libssh2_src,
         .root = upstream.path(""),

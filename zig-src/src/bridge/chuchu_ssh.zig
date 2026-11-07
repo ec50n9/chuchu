@@ -644,6 +644,18 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeConnect(en
     };
     session.session = ssh_session;
     c.libssh2_session_set_blocking(ssh_session, 0);
+    // A TUI repaint costs megabytes of highly repetitive output, so ask for OpenSSH's
+    // deferred compression (after auth) in both directions; the server picks from our
+    // order, so this is what decides whether a full-screen redraw travels compressed.
+    if (c.libssh2_session_flag(ssh_session, c.LIBSSH2_FLAG_COMPRESS, 1) != 0) {
+        logError("Enabling SSH compression failed", .{});
+    }
+    for ([_]c_int{ c.LIBSSH2_METHOD_COMP_CS, c.LIBSSH2_METHOD_COMP_SC }) |method| {
+        const pref_rc =
+            c.libssh2_session_method_pref(ssh_session, method, "zlib@openssh.com,zlib,none");
+        // A failure here silently leaves the session uncompressed, so it must be visible.
+        if (pref_rc != 0) logError("SSH compression preference failed rc={}", .{pref_rc});
+    }
     logInfo("Starting SSH handshake...", .{});
     while (true) {
         const handshake_rc = c.libssh2_session_handshake(ssh_session, fd);
