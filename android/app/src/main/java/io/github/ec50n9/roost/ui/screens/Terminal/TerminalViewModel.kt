@@ -1,0 +1,728 @@
+package io.github.ec50n9.roost.ui.screens.Terminal
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import io.github.ec50n9.roost.R
+import io.github.ec50n9.roost.model.Transport
+import io.github.ec50n9.roost.service.multiplexer.MultiplexerRegistry
+import io.github.ec50n9.roost.service.multiplexer.RemoteMultiplexerSession
+import io.github.ec50n9.roost.service.terminal.HostKeyPrompt
+import io.github.ec50n9.roost.service.terminal.SessionState
+import io.github.ec50n9.roost.service.terminal.TabSession
+import io.github.ec50n9.roost.service.terminal.TabSpec
+import io.github.ec50n9.roost.service.terminal.TerminalMouseAction
+import io.github.ec50n9.roost.service.terminal.TerminalMouseButton
+import io.github.ec50n9.roost.service.terminal.TerminalSessionRepository
+import io.github.ec50n9.roost.ui.screens.Files.ConnectionTab
+import io.github.ec50n9.roost.ui.screens.Files.FileBrowserEntry
+import io.github.ec50n9.roost.ui.screens.Files.FileBrowserUiState
+import io.github.ec50n9.roost.ui.screens.Files.FileEntryType
+import io.github.ec50n9.roost.ui.screens.Files.FileSort
+import io.github.ec50n9.roost.ui.screens.Files.UploadProgress
+import io.github.ec50n9.roost.ui.terminal.GhosttyKeyAction
+import io.github.ec50n9.roost.ui.terminal.TerminalSpecialKey
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class TerminalViewModel(application: Application) : AndroidViewModel(application) {
+    private val app = application
+    private val sessionRepository = TerminalSessionRepository.getInstance(application)
+
+    // Reconnecting an attached session is the only multiplexer recovery left: opening one from the
+    // terminal is gone, the server list owns it now.
+    private data class PendingMultiplexerReconnect(val tabId: String, val spec: TabSpec)
+
+    private val _multiplexerState = MutableStateFlow(MultiplexerUiState())
+    val multiplexerState: StateFlow<MultiplexerUiState> = _multiplexerState.asStateFlow()
+    private var pendingMultiplexerReconnect: PendingMultiplexerReconnect? = null
+    private var multiplexerActionGeneration = 0L
+    private var multiplexerSessionListGeneration = 0L
+    private var multiplexerDuplicateInFlight = false
+
+    val tabs: StateFlow<List<TabSession>> = sessionRepository.tabs
+    val activeTabId: StateFlow<String?> = sessionRepository.activeTabId
+    val activeTab: StateFlow<TabSession?> = sessionRepository.activeTab
+    val sessionState: StateFlow<SessionState> = sessionRepository.sessionState
+    val hostKeyPrompt: StateFlow<HostKeyPrompt?> = sessionRepository.hostKeyPrompt
+    init {
+        sessionRepository.attachClient()
+    }
+
+    private val _connectionTabByTab = MutableStateFlow<Map<String, ConnectionTab>>(emptyMap())
+    private val _fileBrowserStateByTab =
+        MutableStateFlow<Map<String, FileBrowserUiState>>(emptyMap())
+    private val fileHomeByTab = ConcurrentHashMap<String, String>()
+    // One in-flight job per tab for each operation; launching a new one cancels
+    // the previous, so stale responses can never overwrite newer state.
+    private val fileBrowserRefreshJobs = ConcurrentHashMap<String, Job>()
+    private val fileBrowserResolverJobs = ConcurrentHashMap<String, Job>()
+
+    val selectedTab: StateFlow<ConnectionTab> =
+        combine(activeTabId, _connectionTabByTab) { id, map ->
+                if (id == null) ConnectionTab.Terminal else map[id] ?: ConnectionTab.Terminal
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ConnectionTab.Terminal)
+
+    val fileBrowserState: StateFlow<FileBrowserUiState> =
+        combine(activeTabId, _fileBrowserStateByTab) { id, map ->
+                if (id == null) FileBrowserUiState() else map[id] ?: FileBrowserUiState()
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, FileBrowserUiState())
+
+    fun selectLocalShellTab(): TabSession? {
+        val existing =
+            sessionRepository.tabs.value.filter {
+                it.spec.hostId == null && it.spec.transport == Transport.LocalShell
+            }
+        if (existing.isEmpty()) return null
+        val activeId = sessionRepository.activeTabId.value
+        val target = existing.firstOrNull { it.id == activeId } ?: existing.last()
+        sessionRepository.selectTab(target.id)
+        return target
+    }
+
+    fun openTab(spec: TabSpec): TabSession {
+        return sessionRepository.openTab(spec)
+    }
+
+    fun duplicateActiveTab(): TabSession? {
+        val current = sessionRepository.activeTab.value ?: return null
+        if (current.spec.usesRuntimeMultiplexer) {
+            startMultiplexerDuplicate(current.spec)
+            return null
+        }
+        return openTab(current.spec)
+    }
+
+    private fun startMultiplexerDuplicate(spec: TabSpec) {
+        if (multiplexerDuplicateInFlight) return
+        multiplexerDuplicateInFlight = true
+        _multiplexerState.value =
+            _multiplexerState.value.copy(
+                duplicateLoading = true,
+                preflightError = null,
+            )
+        val duplicateSpec = spec.copy(
+            multiplexer = spec.multiplexer ?: MultiplexerRegistry.defaultType,
+            multiplexerSessionName = null,
+            multiplexerCreateIfMissing = true,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = runCatching { sessionRepository.resolveMultiplexerSessionName(duplicateSpec) }
+                withContext(Dispatchers.Main) {
+                    result.fold(
+                        onSuccess = { name ->
+                            openTab(duplicateSpec.copy(multiplexerSessionName = name))
+                        },
+                        onFailure = { error ->
+                            _multiplexerState.value = _multiplexerState.value.copy(
+                                preflightError =
+                                    error.message
+                                        ?: app.getString(R.string.terminal_error_create_mux),
+                            )
+                        },
+                    )
+                }
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main) {
+                    multiplexerDuplicateInFlight = false
+                    _multiplexerState.value = _multiplexerState.value.copy(duplicateLoading = false)
+                }
+            }
+        }
+    }
+
+    private fun initiateMultiplexerReconnect(tab: TabSession) {
+        beginMultiplexerReconnect(
+            PendingMultiplexerReconnect(
+                tabId = tab.id,
+                spec = tab.spec.copy(
+                    multiplexer = tab.spec.multiplexer ?: MultiplexerRegistry.defaultType,
+                ),
+            )
+        )
+    }
+
+    private fun beginMultiplexerReconnect(action: PendingMultiplexerReconnect) {
+        if (
+            pendingMultiplexerReconnect == action &&
+                _multiplexerState.value.preflightLoading
+        ) {
+            // Keep the original generation alive while its host-key prompt is awaiting a decision.
+            return
+        }
+        val actionGeneration = ++multiplexerActionGeneration
+        pendingMultiplexerReconnect = action
+        val spec = action.spec
+        val label = spec.multiplexer?.label ?: MultiplexerRegistry.defaultType.label
+        if (spec.transport == Transport.Mosh) {
+            _multiplexerState.value = MultiplexerUiState(
+                preflightError =
+                    app.getString(R.string.terminal_error_mosh_unsupported, label),
+                reconnectRecovery = true,
+            )
+            return
+        }
+        if (spec.multiplexer != null && spec.multiplexer.runtimeSupported.not()) {
+            _multiplexerState.value = MultiplexerUiState(
+                preflightError =
+                    app.getString(
+                        R.string.terminal_error_multiplexer_unsupported,
+                        spec.multiplexer.label,
+                    ),
+                reconnectRecovery = true,
+            )
+            return
+        }
+        _multiplexerState.value = MultiplexerUiState(
+            preflightLoading = true,
+            preflightHostLabel = spec.tabLabel,
+            reconnectRecovery = true,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                sessionRepository.resolveMultiplexerSessionName(spec = spec)
+            }
+            withContext(Dispatchers.Main) {
+                if (!isCurrentMultiplexerReconnect(actionGeneration, action)) return@withContext
+                result.fold(
+                    onSuccess = { sessionName ->
+                        completeMultiplexerReconnect(actionGeneration, action, sessionName)
+                    },
+                    onFailure = { error ->
+                        _multiplexerState.value = _multiplexerState.value.copy(
+                            preflightLoading = false,
+                            preflightHostLabel = null,
+                            preflightError =
+                                error.message
+                                    ?: app.getString(R.string.terminal_error_prepare_mux),
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private fun isCurrentMultiplexerReconnect(
+        actionGeneration: Long,
+        action: PendingMultiplexerReconnect,
+    ): Boolean =
+        multiplexerActionGeneration == actionGeneration && pendingMultiplexerReconnect == action
+
+    private fun completeMultiplexerReconnect(
+        actionGeneration: Long,
+        action: PendingMultiplexerReconnect,
+        sessionName: String,
+    ) {
+        if (!isCurrentMultiplexerReconnect(actionGeneration, action)) return
+        val nextSpec = action.spec.copy(
+            multiplexer = action.spec.multiplexer ?: MultiplexerRegistry.defaultType,
+            multiplexerSessionName = sessionName,
+            multiplexerCreateIfMissing = action.spec.multiplexerCreateIfMissing,
+        )
+        pendingMultiplexerReconnect = null
+        _multiplexerState.value = MultiplexerUiState()
+        if (!reconnectTabWithSpec(action.tabId, nextSpec)) {
+            _multiplexerState.value = MultiplexerUiState(
+                preflightError = app.getString(R.string.terminal_error_session_gone),
+                reconnectRecovery = true,
+            )
+        }
+    }
+
+    private fun reconnectTabWithSpec(tabId: String, spec: TabSpec): Boolean {
+        val tab = sessionRepository.tabs.value.firstOrNull { it.id == tabId } ?: return false
+        tab.spec = spec
+        sessionRepository.reconnectTab(tab)
+        return true
+    }
+
+    fun listMultiplexerSessionsForCurrentHost() {
+        val tab = sessionRepository.activeTab.value ?: return
+        val requestGeneration = ++multiplexerSessionListGeneration
+        val sourceTabId = tab.id
+        val sourceHostId = tab.spec.hostId
+        val spec = tab.spec.copy(multiplexer = tab.spec.multiplexer ?: MultiplexerRegistry.defaultType)
+        _multiplexerState.value = _multiplexerState.value.copy(
+            sessions = emptyList(),
+            sessionsLoading = true,
+            sessionsError = null,
+            sessionsSourceTabId = sourceTabId,
+            sessionsSourceHostId = sourceHostId,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { sessionRepository.listMultiplexerSessions(spec) }
+            withContext(Dispatchers.Main) {
+                val activeTab = sessionRepository.activeTab.value
+                if (requestGeneration != multiplexerSessionListGeneration || activeTab?.id != sourceTabId) {
+                    return@withContext
+                }
+                result.fold(
+                    onSuccess = { sessions ->
+                        _multiplexerState.value = _multiplexerState.value.copy(
+                            sessions = sessions,
+                            sessionsLoading = false,
+                            sessionsError = null,
+                            sessionsSourceTabId = sourceTabId,
+                            sessionsSourceHostId = sourceHostId,
+                        )
+                    },
+                    onFailure = { error ->
+                        _multiplexerState.value = _multiplexerState.value.copy(
+                            sessions = emptyList(),
+                            sessionsLoading = false,
+                            sessionsError =
+                                error.message
+                                    ?: app.getString(R.string.terminal_error_list_sessions),
+                            sessionsSourceTabId = sourceTabId,
+                            sessionsSourceHostId = sourceHostId,
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    fun createNextMultiplexerSession() {
+        val tab = sessionRepository.activeTab.value ?: return
+        val nextSpec = tab.spec.copy(
+            multiplexer = tab.spec.multiplexer ?: MultiplexerRegistry.defaultType,
+            multiplexerSessionName = null,
+            multiplexerCreateIfMissing = true,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { sessionRepository.resolveMultiplexerSessionName(nextSpec) }
+            withContext(Dispatchers.Main) {
+                result.fold(
+                    onSuccess = { name ->
+                        openTab(nextSpec.copy(multiplexerSessionName = name))
+                        listMultiplexerSessionsForCurrentHost()
+                    },
+                    onFailure = { error ->
+                        _multiplexerState.value = _multiplexerState.value.copy(
+                            sessionsError =
+                                error.message
+                                    ?: app.getString(R.string.terminal_error_create_mux),
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    fun switchToMultiplexerSession(name: String, sourceTabId: String?) {
+        val activeTab = sessionRepository.activeTab.value
+        val state = _multiplexerState.value
+        val activeHostId = activeTab?.spec?.hostId
+        val sessionListMatchesTab = sourceTabId != null && state.sessionsSourceTabId == sourceTabId && activeTab?.id == sourceTabId
+        val sessionListMatchesHost = activeHostId != null && state.sessionsSourceHostId == activeHostId
+        if (activeTab == null || (!sessionListMatchesTab && !sessionListMatchesHost)) {
+            _multiplexerState.value = state.copy(
+                sessions = emptyList(),
+                sessionsLoading = false,
+                sessionsError = app.getString(R.string.terminal_error_session_list_stale),
+                sessionsSourceTabId = activeTab?.id,
+                sessionsSourceHostId = activeHostId,
+            )
+            return
+        }
+        sessionRepository.switchActiveMultiplexerSession(name)
+    }
+
+    fun retryPendingMultiplexerReconnect() {
+        val action = pendingMultiplexerReconnect ?: return
+        beginMultiplexerReconnect(action)
+    }
+
+    fun dismissMultiplexerRecovery() {
+        _multiplexerState.value = MultiplexerUiState()
+        pendingMultiplexerReconnect = null
+        multiplexerActionGeneration += 1
+    }
+
+    fun selectTab(id: String) {
+        sessionRepository.selectTab(id)
+    }
+
+    fun closeTab(id: String) {
+        _connectionTabByTab.value = _connectionTabByTab.value - id
+        _fileBrowserStateByTab.value = _fileBrowserStateByTab.value - id
+        fileHomeByTab.remove(id)
+        fileBrowserResolverJobs.remove(id)?.cancel()
+        fileBrowserRefreshJobs.remove(id)?.cancel()
+        sessionRepository.closeTab(id)
+    }
+
+    fun reconnect() {
+        val tab = sessionRepository.activeTab.value ?: return
+        if (tab.spec.usesRuntimeMultiplexer) {
+            initiateMultiplexerReconnect(tab)
+        } else {
+            sessionRepository.reconnectActive()
+        }
+    }
+
+    fun selectConnectionTab(tab: ConnectionTab) {
+        val id = activeTabId.value ?: return
+        _connectionTabByTab.value = _connectionTabByTab.value + (id to tab)
+        if (tab == ConnectionTab.Files) {
+            val state = _fileBrowserStateByTab.value[id]
+            if (state == null || state.entries.isEmpty()) {
+                resolveInitialFilePathAndRefresh(id)
+            }
+        }
+    }
+
+    private fun updateFileBrowserState(
+        id: String,
+        transform: (FileBrowserUiState) -> FileBrowserUiState,
+    ) {
+        _fileBrowserStateByTab.update { current ->
+            val previous = current[id] ?: FileBrowserUiState()
+            current + (id to transform(previous))
+        }
+    }
+
+    private fun tabExists(tabId: String): Boolean = sessionRepository.tabs.value.any { it.id == tabId }
+
+    private fun currentSessionPwd(tabId: String): String? =
+        sessionRepository.tabs.value
+            .firstOrNull { it.id == tabId }
+            ?.sessionState
+            ?.value
+            ?.pwd
+            ?.takeIf { it.isNotBlank() }
+
+    private suspend fun resolveRealpath(tabId: String, path: String): String? =
+        try {
+            sessionRepository.sftpRealpath(tabId, path).takeIf { it.isNotBlank() }
+        } catch (err: CancellationException) {
+            throw err
+        } catch (_: Exception) {
+            null
+        }
+
+    private fun resolveInitialFilePathAndRefresh(tabId: String) {
+        if (!tabExists(tabId)) return
+        val pwd = currentSessionPwd(tabId)
+        if (pwd != null) {
+            updateFileBrowserState(tabId) { it.copy(currentPath = pwd, resolvedHomePath = pwd) }
+            refreshFileBrowser(tabId)
+            return
+        }
+        val cachedHome = fileHomeByTab[tabId]
+        if (cachedHome != null) {
+            updateFileBrowserState(tabId) { it.copy(currentPath = cachedHome) }
+            refreshFileBrowser(tabId)
+            return
+        }
+        fileBrowserResolverJobs.remove(tabId)?.cancel()
+        val resolverJob =
+            viewModelScope.launch(Dispatchers.IO) {
+                val tabState = sessionRepository.tabs.value.firstOrNull { it.id == tabId }
+                val fallback = tabState?.engine?.state?.value?.pwd?.takeIf { it.isNotBlank() } ?: "/"
+                val resolved = resolveRealpath(tabId, ".") ?: resolveRealpath(tabId, "~")
+                if (!isActive || !tabExists(tabId)) return@launch
+                val home = resolved ?: fallback
+                val initial = currentSessionPwd(tabId) ?: home
+                fileHomeByTab[tabId] = home
+                updateFileBrowserState(tabId) {
+                    it.copy(currentPath = initial, resolvedHomePath = initial)
+                }
+                refreshFileBrowser(tabId)
+            }
+        fileBrowserResolverJobs[tabId] = resolverJob
+        resolverJob.invokeOnCompletion { fileBrowserResolverJobs.remove(tabId, resolverJob) }
+    }
+
+    fun refreshFileBrowser() {
+        val tabId = activeTabId.value ?: return
+        refreshFileBrowser(tabId)
+    }
+
+    private fun refreshFileBrowser(tabId: String) {
+        if (!tabExists(tabId)) return
+        val pwd =
+            sessionRepository.tabs.value
+                .firstOrNull { it.id == tabId }
+                ?.sessionState
+                ?.value
+                ?.pwd
+                ?.takeIf { it.isNotBlank() } ?: "/"
+        val targetPath = (_fileBrowserStateByTab.value[tabId]?.currentPath?.ifBlank { pwd }) ?: pwd
+        fileBrowserRefreshJobs.remove(tabId)?.cancel()
+        updateFileBrowserState(tabId) {
+            it.copy(currentPath = targetPath, isLoading = true, error = null)
+        }
+        val refreshJob =
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val rows = sessionRepository.sftpListDirectory(tabId, targetPath)
+                    if (!isActive) return@launch
+                    val entries =
+                        rows.map { row ->
+                            val parts = row.split('\t')
+                            val name = parts.getOrNull(0).orEmpty()
+                            val kind = parts.getOrNull(1).orEmpty()
+                            val size = parts.getOrNull(2)?.toLongOrNull()
+                            val mtime = parts.getOrNull(3)?.toLongOrNull()
+                            val normalizedBase = targetPath.trimEnd('/').ifEmpty { "/" }
+                            val type =
+                                when (kind) {
+                                    "dir" -> FileEntryType.Directory
+                                    "file" -> FileEntryType.File
+                                    "link" -> FileEntryType.Symlink
+                                    else -> FileEntryType.Other
+                                }
+                            FileBrowserEntry(
+                                name = name,
+                                path =
+                                    if (normalizedBase == "/") "/$name"
+                                    else "$normalizedBase/$name",
+                                type = type,
+                                sizeBytes = if (size == null || size <= 0L) null else size,
+                                modifiedAtText = mtime?.takeIf { it > 0L }?.let { formatMtime(it) },
+                            )
+                        }
+                    val current = _fileBrowserStateByTab.value[tabId] ?: FileBrowserUiState()
+                    val sortedEntries =
+                        when (current.sort) {
+                            FileSort.Name -> entries.sortedBy { it.name.lowercase() }
+                            FileSort.Size -> entries.sortedByDescending { it.sizeBytes ?: -1L }
+                            FileSort.Modified ->
+                                entries.sortedByDescending { it.modifiedAtText ?: "" }
+                        }
+                    if (isActive && current.currentPath == targetPath) {
+                        updateFileBrowserState(tabId) {
+                            it.copy(entries = sortedEntries, isLoading = false, error = null)
+                        }
+                    }
+                } catch (err: CancellationException) {
+                    throw err
+                } catch (err: Exception) {
+                    val current = _fileBrowserStateByTab.value[tabId]
+                    if (isActive && current?.currentPath == targetPath) {
+                        updateFileBrowserState(tabId) {
+                            it.copy(
+                                isLoading = false,
+                                error =
+                                    err.message
+                                        ?: app.getString(R.string.files_error_list_directory),
+                            )
+                        }
+                    }
+                }
+            }
+        fileBrowserRefreshJobs[tabId] = refreshJob
+        refreshJob.invokeOnCompletion { fileBrowserRefreshJobs.remove(tabId, refreshJob) }
+    }
+
+    suspend fun beginUpload(fileName: String) {
+        val tabId = activeTabId.value ?: return
+        val current = _fileBrowserStateByTab.value[tabId] ?: return
+        val targetPath = current.currentPath.trimEnd('/') + "/" + fileName
+        sessionRepository.sftpOpenWrite(tabId, targetPath)
+    }
+
+    suspend fun writeUploadChunk(data: ByteArray) {
+        val tabId = activeTabId.value ?: return
+        sessionRepository.sftpWriteChunk(tabId, data)
+    }
+
+    suspend fun finishUpload() {
+        val tabId = activeTabId.value ?: return
+        sessionRepository.sftpCloseWrite(tabId)
+        refreshFileBrowser()
+    }
+
+    fun setUploadProgress(progress: UploadProgress?) {
+        val tabId = activeTabId.value ?: return
+        updateFileBrowserState(tabId) { it.copy(uploadProgress = progress) }
+    }
+
+    fun goUpDirectory() {
+        val tabId = activeTabId.value ?: return
+        val current = _fileBrowserStateByTab.value[tabId]?.currentPath ?: return
+        val parent = current.substringBeforeLast('/', "").ifBlank { "/" }
+        openPath(parent)
+    }
+
+    fun openPath(path: String) {
+        val tabId = activeTabId.value ?: return
+        updateFileBrowserState(tabId) { it.copy(currentPath = path) }
+        refreshFileBrowser()
+    }
+
+    fun selectFileSort(sort: FileSort) {
+        val tabId = activeTabId.value ?: return
+        updateFileBrowserState(tabId) { it.copy(sort = sort) }
+        refreshFileBrowser()
+    }
+
+    suspend fun deleteFile(tabId: String, entry: FileBrowserEntry) {
+        sessionRepository.sftpDelete(tabId, entry.path, entry.type == FileEntryType.Directory)
+        withContext(Dispatchers.Main) { refreshFileBrowser() }
+    }
+
+    suspend fun readFile(tabId: String, entry: FileBrowserEntry, maxBytes: Int): ByteArray {
+        return sessionRepository.sftpReadFile(tabId, entry.path, maxBytes)
+    }
+
+    private fun formatMtime(epochSeconds: Long): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+        return formatter.format(Date(epochSeconds * 1000L))
+    }
+
+    fun onCanvasSizeChanged(
+        cols: Int,
+        rows: Int,
+        cellWidth: Int,
+        cellHeight: Int,
+        screenWidth: Int,
+        screenHeight: Int,
+    ) {
+        sessionRepository.resize(cols, rows, cellWidth, cellHeight, screenWidth, screenHeight)
+    }
+
+    fun onScroll(delta: Int, x: Float, y: Float) {
+        sessionRepository.scroll(delta, x, y)
+    }
+
+    fun onPrimaryMouseClick(x: Float, y: Float) {
+        sendPrimaryMouseEvent(TerminalMouseAction.Press, x, y, anyButtonPressed = false, trackLastCell = false)
+        sendPrimaryMouseEvent(TerminalMouseAction.Release, x, y, anyButtonPressed = false, trackLastCell = false)
+    }
+
+    fun onAppSelectionDrag(action: Int, x: Float, y: Float) {
+        sendPrimaryMouseEvent(
+            action = action,
+            x = x,
+            y = y,
+            anyButtonPressed = action != TerminalMouseAction.Release,
+            trackLastCell = true,
+        )
+    }
+
+    private fun sendPrimaryMouseEvent(
+        action: Int,
+        x: Float,
+        y: Float,
+        anyButtonPressed: Boolean,
+        trackLastCell: Boolean,
+    ) {
+        sessionRepository.sendMouseEvent(
+            action = action,
+            button = TerminalMouseButton.Left,
+            mods = 0,
+            x = x,
+            y = y,
+            anyButtonPressed = anyButtonPressed,
+            trackLastCell = trackLastCell,
+        )
+    }
+
+    fun onHardwareKey(key: Int, codepoint: Int, mods: Int, action: Int, charCode: Int = 0) {
+        val hasNonTextModifier = mods and ((1 shl 1) or (1 shl 2) or (1 shl 3)) != 0
+        val isRelease = action == GhosttyKeyAction.Release
+        if (!isRelease) {
+            sessionRepository.scrollToActive()
+        }
+        val effectiveCodepoint = if (charCode > 0) charCode else codepoint
+
+        val utf8 =
+            if (effectiveCodepoint > 0 && !hasNonTextModifier && !isRelease) effectiveCodepoint.toChar().toString()
+            else null
+        sessionRepository.writeKey(key, effectiveCodepoint, mods, action, utf8)
+    }
+
+    fun onTextInput(text: String) {
+        sessionRepository.scrollToActive()
+        sessionRepository.writeText(text)
+    }
+
+    fun onSpecialKeyInput(key: TerminalSpecialKey, mods: Int) {
+        sessionRepository.scrollToActive()
+        sessionRepository.writeKey(key.engineKey, 0, mods, GhosttyKeyAction.Press)
+        sessionRepository.writeKey(key.engineKey, 0, mods, GhosttyKeyAction.Release)
+    }
+
+    fun onPasteText(text: String) {
+        if (text.isEmpty()) return
+        sessionRepository.scrollToActive()
+        sessionRepository.writePaste(text)
+    }
+
+    fun onFocusChanged(focused: Boolean) {
+        sessionRepository.sendFocusEvent(focused)
+    }
+
+    fun onColorSchemeChanged(isDark: Boolean) {
+        sessionRepository.setColorScheme(isDark)
+    }
+
+    fun onDefaultColorsChanged(
+        fg: IntArray?,
+        bg: IntArray?,
+        cursor: IntArray?,
+        palette: ByteArray?,
+    ) {
+        sessionRepository.setDefaultColors(fg, bg, cursor, palette)
+    }
+
+    fun onHostKeyDecision(accepted: Boolean) {
+        sessionRepository.respondToHostKey(accepted)
+    }
+
+    override fun onCleared() {
+        sessionRepository.detachClient()
+    }
+
+    companion object {
+        fun factory(application: Application): ViewModelProvider.Factory =
+            object : ViewModelProvider.Factory {
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    if (modelClass.isAssignableFrom(TerminalViewModel::class.java)) {
+                        @Suppress("UNCHECKED_CAST")
+                        return TerminalViewModel(application) as T
+                    }
+                    throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+                }
+            }
+    }
+}
+
+data class MultiplexerUiState(
+    val preflightError: String? = null,
+    val preflightLoading: Boolean = false,
+    val preflightHostLabel: String? = null,
+    val duplicateLoading: Boolean = false,
+    val sessions: List<RemoteMultiplexerSession> = emptyList(),
+    val sessionsLoading: Boolean = false,
+    val sessionsError: String? = null,
+    val sessionsSourceTabId: String? = null,
+    val sessionsSourceHostId: Long? = null,
+    val reconnectRecovery: Boolean = false,
+)

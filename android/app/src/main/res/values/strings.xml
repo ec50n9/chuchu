@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">chuchu</string>
+    <string name="app_name">Roost</string>
 
     <!-- Shared actions -->
     <string name="action_manage">manage</string>
@@ -208,7 +208,7 @@
     <string name="verification_local_shell_subtitle">Authenticate to open this device shell</string>
     <string name="verification_connect_title">Verify to connect</string>
     <string name="verification_connect_subtitle">Authenticate to open this server session</string>
-    <string name="verification_unlock_title">Unlock Chuchu</string>
+    <string name="verification_unlock_title">Unlock Roost</string>
     <string name="verification_unlock_subtitle">Authenticate to continue</string>
 
     <!-- Sessions -->
@@ -226,7 +226,7 @@
     <string name="session_status_disconnected">disconnected</string>
     <string name="session_status_error">error</string>
 
-    <!-- Builtin chuchu commands -->
+    <!-- Builtin Roost commands -->
     <string name="builtin_tabs_label">sessions</string>
     <string name="builtin_tabs_description">show the session switcher</string>
     <string name="builtin_new_tab_label">new session</string>
@@ -293,7 +293,7 @@
     <!-- Session foreground notification -->
     <string name="notification_channel_name">SSH sessions</string>
     <string name="notification_channel_description">Keeps active terminal sessions alive</string>
-    <string name="notification_title">Chuchu connected</string>
+    <string name="notification_title">Roost connected</string>
     <string name="notification_default_label">Active session</string>
     <string name="notification_action_disconnect">Disconnect</string>
 
@@ -312,7 +312,7 @@
     <string name="backup_export_success">Backup exported successfully</string>
     <string name="backup_export_failed">Export failed. Please choose another location and try again.</string>
     <string name="backup_wrong_passphrase">Wrong passphrase. Could not decrypt backup.</string>
-    <string name="backup_invalid_file">Import failed. Choose a valid Chuchu backup file.</string>
+    <string name="backup_invalid_file">Import failed. Choose a valid Roost backup file.</string>
     <string name="backup_read_failed">Import failed. Could not read the selected backup file.</string>
     <string name="backup_import_failed_nothing_changed">Import failed. Nothing was changed.</string>
     <string name="backup_import_complete">Import complete: %1$s</string>
@@ -378,7 +378,7 @@
     <string name="settings_create_quick_keys">create quick keys.</string>
     <string name="settings_show_actions_button">show actions button</string>
     <string name="settings_show_actions_button_hint">toggle visibility of the floating button in terminal</string>
-    <string name="settings_chuchu_commands">chuchu commands</string>
+    <string name="settings_chuchu_commands">Roost commands</string>
     <string name="settings_no_shortcuts">no shortcuts</string>
     <plurals name="settings_shortcuts_count">
         <item quantity="one">%1$d shortcut</item>
@@ -413,7 +413,7 @@
     <string name="custom_actions_key">Key</string>
     <string name="custom_actions_key_placeholder">a</string>
     <string name="custom_actions_shortcut">Shortcut</string>
-    <string name="custom_actions_shortcut_placeholder">single key for chuchu command</string>
+    <string name="custom_actions_shortcut_placeholder">single key for a Roost command</string>
     <string name="custom_actions_no_modifiers">No modifiers</string>
     <string name="custom_actions_modifiers">Modifiers: %1$s</string>
     <string name="custom_actions_value">Value</string>

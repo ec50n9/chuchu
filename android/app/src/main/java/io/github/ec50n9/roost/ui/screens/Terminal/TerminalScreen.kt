@@ -1,0 +1,1806 @@
+package io.github.ec50n9.roost.ui.screens.Terminal
+
+import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import android.webkit.MimeTypeMap
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
+import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.ec50n9.roost.data.repository.SettingsRepository
+import io.github.ec50n9.roost.R
+import io.github.ec50n9.roost.model.AuthMethod
+import io.github.ec50n9.roost.model.Transport
+import io.github.ec50n9.roost.service.terminal.SessionStatus
+import io.github.ec50n9.roost.service.terminal.TabSpec
+import io.github.ec50n9.roost.service.terminal.TerminalSnapshot
+import io.github.ec50n9.roost.ui.components.ChuButton
+import io.github.ec50n9.roost.ui.components.ChuButtonVariant
+import io.github.ec50n9.roost.ui.components.ChuDialog
+import io.github.ec50n9.roost.ui.components.ChuText
+import io.github.ec50n9.roost.ui.components.HostKeyPromptDialog
+import io.github.ec50n9.roost.ui.components.KeepImeClosed
+import io.github.ec50n9.roost.ui.screens.Files.ConnectionTab
+import io.github.ec50n9.roost.ui.screens.Files.FileBrowserScreen
+import io.github.ec50n9.roost.ui.screens.Files.UploadProgress
+import io.github.ec50n9.roost.ui.screens.Files.formatFileSize
+import io.github.ec50n9.roost.ui.terminal.AccessoryAction
+import io.github.ec50n9.roost.ui.terminal.BuiltinCommand
+import io.github.ec50n9.roost.ui.terminal.ChuchuKeyBindings
+import io.github.ec50n9.roost.ui.terminal.CustomActionModifier
+import io.github.ec50n9.roost.ui.terminal.GhosttyKey
+import io.github.ec50n9.roost.ui.terminal.GhosttyKeyAction
+import io.github.ec50n9.roost.ui.terminal.KeyboardAccessoryBar
+import io.github.ec50n9.roost.ui.terminal.ModifierState
+import io.github.ec50n9.roost.ui.terminal.TerminalAccessoryDispatcher
+import io.github.ec50n9.roost.ui.terminal.TerminalAccessoryLayoutStore
+import io.github.ec50n9.roost.ui.terminal.TerminalCanvas
+import io.github.ec50n9.roost.ui.terminal.TerminalCustomAction
+import io.github.ec50n9.roost.ui.terminal.TerminalCustomKeyGroup
+import io.github.ec50n9.roost.ui.terminal.TerminalInputView
+import io.github.ec50n9.roost.ui.terminal.TerminalSelection
+import io.github.ec50n9.roost.ui.terminal.TerminalSelectionHandle
+import io.github.ec50n9.roost.ui.terminal.TerminalSelectionState
+import io.github.ec50n9.roost.ui.terminal.TerminalSpecialKey
+import io.github.ec50n9.roost.ui.terminal.decodeCustomActionValue
+import io.github.ec50n9.roost.ui.terminal.modifierStateForCustomAction
+import io.github.ec50n9.roost.ui.terminal.toGhosttyKey
+import io.github.ec50n9.roost.ui.theme.ChuColors
+import io.github.ec50n9.roost.ui.theme.ChuTypography
+import io.github.ec50n9.roost.ui.theme.GhosttyThemeRegistry
+import io.github.ec50n9.roost.ui.theme.resolveActiveThemeName
+import io.github.ec50n9.roost.ui.theme.toRgbIntArray
+import io.github.ec50n9.roost.ui.theme.toTerminalPaletteBytes
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private fun TerminalViewModel.dispatchTextWithModifierState(
+    text: String,
+    modifierState: ModifierState,
+) {
+    val mods = modifierState.terminalMods()
+    for (char in text) {
+        val ghosttyKey =
+            when (char) {
+                '\r',
+                '\n' -> GhosttyKey.enter
+                '\t' -> GhosttyKey.tab
+                else -> char.toGhosttyKey()
+            }
+        if (ghosttyKey != null) {
+            val codepoint =
+                when (char) {
+                    '\r',
+                    '\n',
+                    '\t' -> 0
+                    else -> char.code
+                }
+            onHardwareKey(ghosttyKey, codepoint, mods, GhosttyKeyAction.Press)
+            onHardwareKey(ghosttyKey, codepoint, mods, GhosttyKeyAction.Release)
+        } else {
+            onTextInput(modifierState.applyToText(char.toString()))
+        }
+    }
+}
+
+internal fun displayedSessionAfterActiveChange(
+    routeSessionId: String?,
+    displayedSessionId: String?,
+    activeTabId: String?,
+    existingSessionIds: Set<String>,
+): String? {
+    if (routeSessionId == null || displayedSessionId !in existingSessionIds) return displayedSessionId
+    return activeTabId ?: displayedSessionId
+}
+
+@Composable
+private fun TerminalCustomActionsFab(
+    groups: List<TerminalCustomKeyGroup>,
+    onActionClick: (TerminalCustomAction) -> Unit,
+    modifier: Modifier = Modifier,
+    filteredActions: List<TerminalCustomAction>? = null,
+    onClearFilter: () -> Unit = {},
+) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    var expanded by remember { mutableStateOf(filteredActions != null) }
+    var selectedGroupKey by remember { mutableStateOf<String?>(null) }
+    val selectedGroup =
+        remember(selectedGroupKey, groups) {
+            groups.firstOrNull { it.keyLabel == selectedGroupKey }
+        }
+
+    LaunchedEffect(filteredActions) {
+        if (filteredActions != null) {
+            expanded = true
+            selectedGroupKey = null
+        }
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AnimatedVisibility(visible = expanded, enter = fadeIn(), exit = fadeOut()) {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (filteredActions != null) {
+                    filteredActions.forEach { action ->
+                        ChuButton(
+                            onClick = {
+                                onActionClick(action)
+                                expanded = false
+                                onClearFilter()
+                            },
+                            variant = ChuButtonVariant.Outlined,
+                            bracketed = true,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            ChuText(action.label, style = typography.label)
+                        }
+                    }
+                    ChuButton(
+                        onClick = {
+                            expanded = false
+                            onClearFilter()
+                        },
+                        variant = ChuButtonVariant.Ghost,
+                        bracketed = true,
+                        borderColor = colors.textMuted,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        ChuText("<", style = typography.label, color = colors.textMuted)
+                    }
+                } else if (selectedGroup == null) {
+                    groups.forEach { group ->
+                        ChuButton(
+                            onClick = {
+                                if (group.actions.size == 1) {
+                                    onActionClick(group.actions.first())
+                                    expanded = false
+                                    selectedGroupKey = null
+                                } else {
+                                    selectedGroupKey = group.keyLabel
+                                }
+                            },
+                            variant = ChuButtonVariant.Outlined,
+                            bracketed = true,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            ChuText(group.keyLabel, style = typography.label)
+                        }
+                    }
+                } else {
+                    selectedGroup.actions.forEach { action ->
+                        ChuButton(
+                            onClick = {
+                                onActionClick(action)
+                                expanded = false
+                                selectedGroupKey = null
+                            },
+                            variant = ChuButtonVariant.Outlined,
+                            bracketed = true,
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            ChuText(action.label, style = typography.label)
+                        }
+                    }
+                    ChuButton(
+                        onClick = { selectedGroupKey = null },
+                        variant = ChuButtonVariant.Ghost,
+                        bracketed = true,
+                        borderColor = colors.textMuted,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        ChuText("<", style = typography.label, color = colors.textMuted)
+                    }
+                }
+            }
+        }
+
+        // TUI-style action toggle — square bracketed button instead of a
+        // circular Material FAB. Reads like a macro/quick-key trigger.
+        ChuButton(
+            onClick = {
+                expanded = !expanded
+                if (!expanded) {
+                    selectedGroupKey = null
+                    onClearFilter()
+                }
+            },
+            variant = if (expanded) ChuButtonVariant.Ghost else ChuButtonVariant.Filled,
+            bracketed = true,
+            borderColor = if (expanded) colors.textMuted else null,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            ChuText(
+                if (expanded) "x" else "+",
+                style = typography.label,
+                color = if (expanded) colors.textMuted else colors.onAccent,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TerminalScreen(
+    vm: TerminalViewModel,
+    sessionId: String?,
+    onOpenSettings: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    openLocalShell: Boolean = false,
+) {
+    val sessionState by vm.sessionState.collectAsStateWithLifecycle()
+    val tabs by vm.tabs.collectAsStateWithLifecycle()
+    val activeTabId by vm.activeTabId.collectAsStateWithLifecycle()
+    val activeTab by vm.activeTab.collectAsStateWithLifecycle()
+    val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
+    val filesSupported = activeTab?.spec?.transport != Transport.LocalShell
+    val fileBrowserState by vm.fileBrowserState.collectAsStateWithLifecycle()
+    val hostKeyPrompt by vm.hostKeyPrompt.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    var lastSessionStatus by remember { mutableStateOf<SessionStatus?>(null) }
+    val settingsRepo = remember(context) { SettingsRepository.getInstance(context) }
+    // Opt-in: safeDrawing includes the live IME inset, so padding by it relayouts this screen on
+    // every frame of the IME animation: the terminal gets a new size ~13 times per keyboard
+    // toggle, and every size change resizes the pty, so the remote shell redraws its prompt each
+    // time. Pad by the animation's *target* IME inset instead: the layout takes its final size on
+    // the first frame of the animation, the keyboard then travels through the gap below it, and
+    // the pty is resized once per toggle. IME animations only exist on API 30+; below that the
+    // inset arrives in one step and the live value is the target.
+    val stableImeResize by settingsRepo.stableImeResize.collectAsStateWithLifecycle()
+    val imeInset =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsets.imeAnimationTarget
+        } else {
+            WindowInsets.ime
+        }
+    val screenInsetsModifier =
+        if (stableImeResize) {
+            modifier.windowInsetsPadding(
+                WindowInsets.systemBars.union(WindowInsets.displayCutout).union(imeInset),
+            )
+        } else {
+            modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+        }
+    val currentTheme by settingsRepo.themeName.collectAsStateWithLifecycle()
+    val themeMode by settingsRepo.themeMode.collectAsStateWithLifecycle()
+    val lightThemeName by settingsRepo.lightThemeName.collectAsStateWithLifecycle()
+    val resolvedThemeName = resolveActiveThemeName(
+        themeMode = themeMode,
+        darkThemeName = currentTheme,
+        lightThemeName = lightThemeName,
+    )
+    val currentAccessoryLayoutIds by settingsRepo.accessoryLayoutIds.collectAsStateWithLifecycle()
+    val useSingleRowAccessoryBar by settingsRepo.accessoryBarSingleRow.collectAsStateWithLifecycle()
+    val currentTerminalCustomKeyGroups by
+        settingsRepo.terminalCustomKeyGroups.collectAsStateWithLifecycle()
+    val settingsFontSize by settingsRepo.terminalFontSize.collectAsStateWithLifecycle()
+    val keepScreenAwake by settingsRepo.keepScreenAwake.collectAsStateWithLifecycle()
+    val disableAutocorrect by settingsRepo.disableAutocorrect.collectAsStateWithLifecycle()
+    val keepAwakeView = LocalView.current
+    DisposableEffect(keepScreenAwake, keepAwakeView) {
+        val window = (keepAwakeView.context as? Activity)?.window
+        if (keepScreenAwake) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    val accessoryLayout =
+        remember(currentAccessoryLayoutIds) {
+            TerminalAccessoryLayoutStore.resolveSelectedLayout(currentAccessoryLayoutIds)
+        }
+    val ghosttyTheme =
+        remember(context, resolvedThemeName) { GhosttyThemeRegistry.getTheme(context, resolvedThemeName) }
+    val isDarkTheme = (ghosttyTheme?.background ?: colors.background).luminance() < 0.5f
+    var selection by remember { mutableStateOf<TerminalSelection?>(null) }
+    var selectionState by remember { mutableStateOf<TerminalSelectionState?>(null) }
+    var showTabSheet by remember { mutableStateOf(false) }
+    var hasSeenTabsForHost by remember(openLocalShell) { mutableStateOf(false) }
+    var focusedTabIndex by remember { mutableStateOf(0) }
+    var localShellFilesMessage by remember { mutableStateOf<String?>(null) }
+    var terminalFontSizeSp by remember {
+        mutableStateOf(
+            settingsFontSize.coerceIn(
+                SettingsRepository.MIN_TERMINAL_FONT_SIZE,
+                SettingsRepository.MAX_TERMINAL_FONT_SIZE,
+            ),
+        )
+    }
+    LaunchedEffect(settingsFontSize) {
+        terminalFontSizeSp =
+            settingsFontSize.coerceIn(
+                SettingsRepository.MIN_TERMINAL_FONT_SIZE,
+                SettingsRepository.MAX_TERMINAL_FONT_SIZE,
+            )
+    }
+    val showCustomActionsFab by settingsRepo.showCustomActionsFab.collectAsStateWithLifecycle()
+    val builtinShortcuts by settingsRepo.builtinShortcuts.collectAsStateWithLifecycle()
+    var fabFilteredActions by remember { mutableStateOf<List<TerminalCustomAction>?>(null) }
+    val builtinCommandLabels =
+        BuiltinCommand.entries.associateWith { stringResource(it.labelRes) }
+    val chuchuKeys =
+        remember(
+            vm,
+            currentTerminalCustomKeyGroups,
+            builtinShortcuts,
+            showCustomActionsFab,
+            builtinCommandLabels,
+        ) {
+            val builtinCommandHandlers: Map<BuiltinCommand, () -> Unit> = mapOf(
+                BuiltinCommand.Tabs to { showTabSheet = true },
+                BuiltinCommand.NewTab to {
+                    vm.duplicateActiveTab()
+                    vm.selectConnectionTab(ConnectionTab.Terminal)
+                    showTabSheet = false
+                },
+                BuiltinCommand.Close to {
+                    val activeId = vm.activeTabId.value
+                    if (activeId != null) vm.closeTab(activeId)
+                },
+                BuiltinCommand.Actions to { settingsRepo.setShowCustomActionsFab(!showCustomActionsFab) },
+                BuiltinCommand.Settings to { onOpenSettings() },
+            )
+            ChuchuKeyBindings.build(
+                builtinShortcuts = builtinShortcuts,
+                builtinLabels = builtinCommandLabels,
+                builtinCommandHandlers = builtinCommandHandlers,
+                customGroups = currentTerminalCustomKeyGroups,
+                onDispatchAction = { action ->
+                    val decoded = decodeCustomActionValue(action.payload)
+                    val rawText = decoded.text +
+                        if (CustomActionModifier.Enter in decoded.modifiers) "\n" else ""
+                    val actionModifierState = modifierStateForCustomAction(decoded.modifiers)
+                    vm.dispatchTextWithModifierState(rawText, actionModifierState)
+                },
+                onSelectAmongActions = { actions -> fabFilteredActions = actions },
+            )
+        }
+    val multiplexerState by vm.multiplexerState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(terminalFontSizeSp) {
+        settingsRepo.setTerminalFontSize(terminalFontSizeSp)
+    }
+
+    LaunchedEffect(openLocalShell) {
+        if (!openLocalShell) return@LaunchedEffect
+        val existing = vm.selectLocalShellTab()
+        if (existing != null) {
+            return@LaunchedEffect
+        }
+        vm.openTab(
+            TabSpec(
+                hostId = null,
+                displayName = context.getString(R.string.server_list_local_shell),
+                host = "localhost",
+                username = "android",
+                authMethod = AuthMethod.None,
+                transport = Transport.LocalShell,
+            )
+        )
+    }
+
+    LaunchedEffect(sessionId) {
+        if (sessionId != null) vm.selectTab(sessionId)
+    }
+
+    var displayedSessionId by remember(sessionId) { mutableStateOf(sessionId) }
+
+    // Keep the last frame of the displayed session. The active id changes before this effect runs,
+    // so a closed session cannot replace its frozen frame with the repository's fallback tab.
+    var lastSnapshot by remember { mutableStateOf<TerminalSnapshot?>(null) }
+    LaunchedEffect(displayedSessionId, sessionState.snapshot) {
+        val isThisScreensSession =
+            if (displayedSessionId != null) {
+                activeTabId == displayedSessionId
+            } else {
+                activeTab?.spec?.transport == Transport.LocalShell
+            }
+        if (isThisScreensSession) {
+            sessionState.snapshot?.let { snapshot -> lastSnapshot = snapshot }
+        }
+    }
+    val hostSessionIds =
+        remember(tabs, activeTab) {
+            val hostId = activeTab?.spec?.hostId
+            tabs.filter { it.spec.hostId == hostId }
+        }
+    val hasTabsForHost = hostSessionIds.isNotEmpty()
+
+    val sessionGone =
+        when {
+            displayedSessionId != null -> tabs.none { it.id == displayedSessionId }
+            openLocalShell -> hasSeenTabsForHost && !hasTabsForHost
+            else -> false
+        }
+
+    if (sessionGone) {
+        SessionEndedScreen(
+            snapshot = lastSnapshot,
+            fontSizeSp = terminalFontSizeSp,
+            onBack = onBack,
+            modifier = screenInsetsModifier,
+        )
+        return
+    }
+
+    // This effect leaves composition as soon as the displayed session is gone. That prevents the
+    // repository's fallback selection from turning an ended screen into another live session.
+    LaunchedEffect(activeTabId) {
+        displayedSessionId =
+            displayedSessionAfterActiveChange(
+                routeSessionId = sessionId,
+                displayedSessionId = displayedSessionId,
+                activeTabId = activeTabId,
+                existingSessionIds = tabs.mapTo(mutableSetOf()) { it.id },
+            )
+    }
+
+    LaunchedEffect(openLocalShell, hasTabsForHost) {
+        // Only the local-shell route has to remember that it once had a session: its session has no
+        // id to look up, so "gone" means "it was here and now it is not".
+        if (openLocalShell && hasTabsForHost) hasSeenTabsForHost = true
+    }
+
+    LaunchedEffect(showTabSheet, hostSessionIds, activeTabId) {
+        if (!showTabSheet || hostSessionIds.isEmpty()) return@LaunchedEffect
+        val activeIndex = hostSessionIds.indexOfFirst { it.id == activeTabId }
+        focusedTabIndex =
+            if (activeIndex >= 0) activeIndex
+            else focusedTabIndex.coerceIn(0, hostSessionIds.lastIndex)
+    }
+
+    LaunchedEffect(showTabSheet, activeTab?.id) {
+        if (showTabSheet && activeTab?.spec?.usesRuntimeMultiplexer == true) {
+            vm.listMultiplexerSessionsForCurrentHost()
+        }
+    }
+
+    fun showLocalShellFilesUnsupported() {
+        val message = context.getString(R.string.terminal_files_unsupported)
+        localShellFilesMessage = message
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    LaunchedEffect(filesSupported, selectedTab) {
+        if (filesSupported) {
+            localShellFilesMessage = null
+        }
+        if (!filesSupported && selectedTab == ConnectionTab.Files) {
+            vm.selectConnectionTab(ConnectionTab.Terminal)
+        }
+    }
+
+    LaunchedEffect(sessionState.status, sessionState.error) {
+        val previous = lastSessionStatus
+        lastSessionStatus = sessionState.status
+        if (sessionState.status == SessionStatus.Error && previous != SessionStatus.Error) {
+            val message =
+                sessionState.error ?: context.getString(R.string.terminal_connection_failed)
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    HostKeyPromptDialog(
+        prompt = hostKeyPrompt,
+        onAccept = { vm.onHostKeyDecision(true) },
+        onReject = { vm.onHostKeyDecision(false) },
+    )
+
+    val preflightError = multiplexerState.preflightError
+    LaunchedEffect(preflightError) {
+        if (preflightError != null) {
+            Toast.makeText(context, preflightError, Toast.LENGTH_LONG).show()
+        }
+    }
+    val displaySessionStatus =
+        if (multiplexerState.preflightLoading) SessionStatus.Connecting else sessionState.status
+    val dismissMultiplexerLabel =
+        if (multiplexerState.reconnectRecovery) {
+            stringResource(R.string.action_dismiss)
+        } else {
+            stringResource(R.string.action_back)
+        }
+    when (displaySessionStatus) {
+        SessionStatus.Disconnected,
+        SessionStatus.Error -> {
+            Column(
+                modifier = screenInsetsModifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                val errorMessage = preflightError ?: sessionState.error
+                if (errorMessage != null) {
+                    TerminalRecoveryActions(
+                        message = errorMessage,
+                        isMultiplexerPreflight = preflightError != null,
+                        dismissMultiplexerLabel = dismissMultiplexerLabel,
+                        onRetryMultiplexer = vm::retryPendingMultiplexerReconnect,
+                        onBack = { vm.dismissMultiplexerRecovery() },
+                        onReconnect = vm::reconnect,
+                    )
+                }
+            }
+        }
+
+        SessionStatus.Connecting -> {
+            val hostLabel = if (multiplexerState.preflightLoading) {
+                "${multiplexerState.preflightHostLabel ?: stringResource(R.string.terminal_unknown_server)}..."
+            } else {
+                activeTab?.spec?.host?.let { "$it..." } ?: "..."
+            }
+            Column(
+                modifier = screenInsetsModifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                ChuText(
+                    stringResource(R.string.terminal_connecting_to, hostLabel),
+                    style = typography.body,
+                )
+            }
+        }
+
+        SessionStatus.Connected,
+        SessionStatus.Reconnecting -> {
+            val isReconnecting = sessionState.status == SessionStatus.Reconnecting
+            val snapshot = sessionState.snapshot
+            if (snapshot != null) {
+                var modifierState by remember { mutableStateOf(ModifierState()) }
+                val inputViewRef = remember { mutableStateOf<TerminalInputView?>(null) }
+                var menuSize by remember { mutableStateOf(IntSize.Zero) }
+                val clipboard = remember {
+                    context.getSystemService(ClipboardManager::class.java)
+                }
+                LaunchedEffect(sessionState.handle, activeTabId) {
+                    selection = null
+                    selectionState = null
+                    menuSize = IntSize.Zero
+                }
+
+                fun pasteClipboard(): Boolean {
+                    val clip = clipboard?.primaryClip
+                    if (clip == null || clip.itemCount == 0) {
+                        return false
+                    }
+                    val text = clip.getItemAt(0).coerceToText(context).toString()
+                    if (text.isNotEmpty()) {
+                        vm.onPasteText(modifierState.applyToText(text))
+                        selection = null
+                        selectionState = null
+                        return true
+                    }
+                    return false
+                }
+
+                Box(modifier = screenInsetsModifier.fillMaxSize()) {
+                    LaunchedEffect(ghosttyTheme, colors, isDarkTheme) {
+                        vm.onColorSchemeChanged(isDarkTheme)
+                        vm.onDefaultColorsChanged(
+                            fg =
+                                ghosttyTheme?.foreground?.toRgbIntArray()
+                                    ?: colors.textPrimary.toRgbIntArray(),
+                            bg =
+                                ghosttyTheme?.background?.toRgbIntArray()
+                                    ?: colors.background.toRgbIntArray(),
+                            cursor =
+                                ghosttyTheme?.cursorColor?.toRgbIntArray()
+                                    ?: colors.accent.toRgbIntArray(),
+                            palette = ghosttyTheme?.toTerminalPaletteBytes(),
+                        )
+                    }
+
+                    LaunchedEffect(sessionState.bellCount) {
+                        if (sessionState.bellCount > 0) {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+
+                    val titleText = sessionState.title?.takeIf { it.isNotBlank() }
+                    val pwdText = sessionState.pwd?.takeIf { it.isNotBlank() }
+                    val inputMethodManager = remember {
+                        context.getSystemService(InputMethodManager::class.java)
+                    }
+                    val requestInputFocus: () -> Unit = {
+                        inputViewRef.value?.let { view -> view.showKeyboard(inputMethodManager) }
+                    }
+                    val hideSoftKeyboard: () -> Unit = {
+                        val view = inputViewRef.value
+                        if (view != null) {
+                            inputMethodManager?.hideSoftInputFromWindow(view.windowToken, 0)
+                        }
+                    }
+                    var hasClipboardText by remember { mutableStateOf(false) }
+                    val scope = rememberCoroutineScope()
+                    LaunchedEffect(clipboard) {
+                        fun check() {
+                            hasClipboardText =
+                                try {
+                                    clipboard?.hasPrimaryClip() == true &&
+                                        clipboard!!.primaryClip?.getItemAt(0)?.text?.isNotEmpty() ==
+                                            true
+                                } catch (_: SecurityException) {
+                                    false
+                                }
+                        }
+                        check()
+                        val listener = ClipboardManager.OnPrimaryClipChangedListener { check() }
+                        clipboard?.addPrimaryClipChangedListener(listener)
+                        try {
+                            awaitCancellation()
+                        } finally {
+                            clipboard?.removePrimaryClipChangedListener(listener)
+                        }
+                    }
+
+
+                    fun dispatchAccessoryAction(action: AccessoryAction) {
+                        if (
+                            action is AccessoryAction.SendText && chuchuKeys.handleText(action.text)
+                        ) {
+                            return
+                        }
+                        if (chuchuKeys.isPrefixActive) {
+                            chuchuKeys.reset()
+                        }
+                        val currentModifierState = modifierState
+                        val result =
+                            TerminalAccessoryDispatcher.dispatch(action, currentModifierState)
+                        modifierState = result.modifierState
+
+                        if (result.suppressImeInput) {
+                            inputViewRef.value?.armInputSuppression(action.toString())
+                        }
+
+                        result.specialKey?.let { key ->
+                            vm.onSpecialKeyInput(key, currentModifierState.terminalMods())
+                        }
+
+                        result.text?.let { text -> vm.onTextInput(text) }
+
+                        if (result.shouldPaste) {
+                            pasteClipboard()
+                        }
+                    }
+
+                    fun copySelection() {
+                        val text = selectionState?.text ?: return
+                        clipboard?.setPrimaryClip(
+                            ClipData.newPlainText(
+                                context.getString(R.string.terminal_clipboard_selection_label),
+                                text,
+                            )
+                        )
+                        Toast.makeText(
+                                context,
+                                context.getString(R.string.terminal_copied_selection),
+                                Toast.LENGTH_SHORT,
+                            )
+                            .show()
+                        selection = null
+                        selectionState = null
+                    }
+
+                    val importFileLauncher =
+                        rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.GetMultipleContents()
+                        ) { uris: List<Uri> ->
+                            if (uris.isEmpty()) return@rememberLauncherForActivityResult
+                            scope.launch(Dispatchers.IO) {
+                                var success = 0
+                                var failed = 0
+                                var lastError: String? = null
+                                val total = uris.size
+                                uris.forEachIndexed { index, uri ->
+                                    val fileName =
+                                        context.contentResolver
+                                            .query(uri, null, null, null, null)
+                                            ?.use { cursor ->
+                                                val idx =
+                                                    cursor.getColumnIndex(
+                                                        OpenableColumns.DISPLAY_NAME
+                                                    )
+                                                if (cursor.moveToFirst() && idx >= 0)
+                                                    cursor.getString(idx)
+                                                else null
+                                            } ?: uri.lastPathSegment ?: "uploaded_${index}"
+                                    val fileSize =
+                                        context.contentResolver
+                                            .query(uri, null, null, null, null)
+                                            ?.use { cursor ->
+                                                val idx =
+                                                    cursor.getColumnIndex(OpenableColumns.SIZE)
+                                                if (cursor.moveToFirst() && idx >= 0)
+                                                    cursor.getLong(idx)
+                                                else 0L
+                                            } ?: 0L
+                                    try {
+                                        val stream =
+                                            context.contentResolver.openInputStream(uri)
+                                                ?: throw IllegalStateException("Cannot open file")
+                                        stream.use { input ->
+                                            vm.beginUpload(fileName)
+                                            vm.setUploadProgress(
+                                                UploadProgress(
+                                                    fileName = fileName,
+                                                    bytesWritten = 0,
+                                                    totalBytes = fileSize,
+                                                    fileIndex = index,
+                                                    totalFiles = total,
+                                                )
+                                            )
+                                            val buffer = ByteArray(65536)
+                                            var bytesWritten = 0L
+                                            var lastProgressBytes = 0L
+                                            var read: Int
+                                            while (input.read(buffer).also { read = it } != -1) {
+                                                vm.writeUploadChunk(buffer.copyOf(read))
+                                                bytesWritten += read
+                                                if (
+                                                    bytesWritten - lastProgressBytes >= 262144 ||
+                                                        bytesWritten == fileSize
+                                                ) {
+                                                    lastProgressBytes = bytesWritten
+                                                    vm.setUploadProgress(
+                                                        UploadProgress(
+                                                            fileName = fileName,
+                                                            bytesWritten = bytesWritten,
+                                                            totalBytes = fileSize,
+                                                            fileIndex = index,
+                                                            totalFiles = total,
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            vm.finishUpload()
+                                        }
+                                        success++
+                                    } catch (e: Exception) {
+                                        failed++
+                                        lastError = e.message ?: e.javaClass.simpleName
+                                        runCatching { vm.finishUpload() }
+                                    } finally {
+                                        vm.setUploadProgress(null)
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    val msg =
+                                        when {
+                                            failed == 0 ->
+                                                context.resources.getQuantityString(
+                                                    R.plurals.terminal_uploaded_files,
+                                                    success,
+                                                    success,
+                                                )
+                                            lastError != null ->
+                                                context.getString(
+                                                    R.string.terminal_uploaded_some_failed_reason,
+                                                    success,
+                                                    failed,
+                                                    lastError,
+                                                )
+                                            else ->
+                                                context.getString(
+                                                    R.string.terminal_uploaded_some_failed,
+                                                    success,
+                                                    failed,
+                                                )
+                                        }
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+
+                    var pendingDownloadBytes by remember { mutableStateOf<ByteArray?>(null) }
+                    var pendingDownloadName by remember { mutableStateOf("download.bin") }
+                    var pendingDeleteEntry by remember {
+                        mutableStateOf<io.github.ec50n9.roost.ui.screens.Files.FileBrowserEntry?>(
+                            null
+                        )
+                    }
+
+                    val downloadLauncher =
+                        rememberLauncherForActivityResult(
+                            contract =
+                                ActivityResultContracts.CreateDocument("application/octet-stream")
+                        ) { uri: Uri? ->
+                            val bytes = pendingDownloadBytes
+                            if (uri == null || bytes == null)
+                                return@rememberLauncherForActivityResult
+                            scope.launch(Dispatchers.IO) {
+                                runCatching {
+                                        context.contentResolver.openOutputStream(uri)?.use {
+                                            it.write(bytes)
+                                        } ?: error("Cannot open destination")
+                                    }
+                                    .onSuccess {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                    context,
+                                                    context.getString(
+                                                        R.string.terminal_downloaded,
+                                                        pendingDownloadName,
+                                                    ),
+                                                    Toast.LENGTH_SHORT,
+                                                )
+                                                .show()
+                                        }
+                                    }
+                                    .onFailure {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                    context,
+                                                    context.getString(
+                                                        R.string.terminal_download_failed,
+                                                        it.message.orEmpty(),
+                                                    ),
+                                                    Toast.LENGTH_LONG,
+                                                )
+                                                .show()
+                                        }
+                                    }
+                            }
+                        }
+
+                    LaunchedEffect(Unit) {
+                        requestInputFocus()
+                        vm.onFocusChanged(true)
+                    }
+                    Column(
+                        modifier =
+                            Modifier.fillMaxSize()
+                                .blur(if (showTabSheet) 10.dp else 0.dp)
+                                // The stable-IME path already pads for the keyboard through
+                                // screenInsetsModifier, so only the default path pads here.
+                                .then(if (stableImeResize) Modifier else Modifier.imePadding())
+                    ) {
+                        if (selectedTab == ConnectionTab.Files && filesSupported) {
+                            FileBrowserScreen(
+                                state = fileBrowserState,
+                                onGoUp = vm::goUpDirectory,
+                                onRefresh = vm::refreshFileBrowser,
+                                onSelectSort = vm::selectFileSort,
+                                onOpenPath = vm::openPath,
+                                onBackToTerminal = {
+                                    vm.selectConnectionTab(ConnectionTab.Terminal)
+                                },
+                                onCopyPath = { path ->
+                                    clipboard?.setPrimaryClip(
+                                        ClipData.newPlainText(
+                                            context.getString(R.string.terminal_clipboard_path_label),
+                                            path,
+                                        )
+                                    )
+                                    Toast.makeText(
+                                            context,
+                                            context.getString(R.string.terminal_copied_path),
+                                            Toast.LENGTH_SHORT,
+                                        )
+                                        .show()
+                                },
+                                onImportFile = { importFileLauncher.launch("*/*") },
+                                onOpenFile = { entry ->
+                                    val tabId = activeTabId ?: return@FileBrowserScreen
+                                    scope.launch(Dispatchers.IO) {
+                                        runCatching {
+                                                val bytes = vm.readFile(tabId, entry, 32 * 1024 * 1024)
+                                                val safeName = entry.name.ifBlank { "remote_file" }
+                                                val outFile = File(context.cacheDir, safeName)
+                                                outFile.writeBytes(bytes)
+                                                val uri =
+                                                    FileProvider.getUriForFile(
+                                                        context,
+                                                        "${context.packageName}.fileprovider",
+                                                        outFile,
+                                                    )
+                                                val ext =
+                                                    safeName.substringAfterLast('.', "").lowercase()
+                                                val mime =
+                                                    MimeTypeMap.getSingleton()
+                                                        .getMimeTypeFromExtension(ext)
+                                                        ?: "application/octet-stream"
+                                                val viewIntent =
+                                                    Intent(Intent.ACTION_VIEW).apply {
+                                                        setDataAndType(uri, mime)
+                                                        addFlags(
+                                                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                        )
+                                                    }
+                                                withContext(Dispatchers.Main) {
+                                                    context.startActivity(
+                                                        Intent.createChooser(
+                                                            viewIntent,
+                                                            context.getString(R.string.terminal_open_with),
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            .onFailure {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(
+                                                            context,
+                                                            context.getString(
+                                                                R.string.terminal_open_failed,
+                                                                it.message.orEmpty(),
+                                                            ),
+                                                            Toast.LENGTH_LONG,
+                                                        )
+                                                        .show()
+                                                }
+                                            }
+                                    }
+                                },
+                                onDeleteFile = { entry -> pendingDeleteEntry = entry },
+                                onDownloadFile = { entry ->
+                                    val tabId = activeTabId ?: return@FileBrowserScreen
+                                    scope.launch(Dispatchers.IO) {
+                                        runCatching { vm.readFile(tabId, entry, 16 * 1024 * 1024) }
+                                            .onSuccess { bytes ->
+                                                pendingDownloadBytes = bytes
+                                                pendingDownloadName = entry.name
+                                                withContext(Dispatchers.Main) {
+                                                    downloadLauncher.launch(entry.name)
+                                                }
+                                            }
+                                            .onFailure {
+                                                withContext(Dispatchers.Main) {
+                                                    Toast.makeText(
+                                                            context,
+                                                            context.getString(
+                                                                R.string.terminal_download_failed,
+                                                                it.message.orEmpty(),
+                                                            ),
+                                                            Toast.LENGTH_LONG,
+                                                        )
+                                                        .show()
+                                                }
+                                            }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            pendingDeleteEntry?.let { entry ->
+                                ChuDialog(
+                                    title = stringResource(R.string.terminal_delete_file_title, entry.name),
+                                    confirmLabel = stringResource(R.string.dialog_confirm_delete),
+                                    dismissLabel = stringResource(R.string.dialog_dismiss),
+                                    onConfirm = {
+                                        val tabId = activeTabId ?: run {
+                                            pendingDeleteEntry = null
+                                            return@ChuDialog
+                                        }
+                                        pendingDeleteEntry = null
+                                        scope.launch(Dispatchers.IO) {
+                                            runCatching { vm.deleteFile(tabId, entry) }
+                                                .onSuccess {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(
+                                                                context,
+                                                                context.getString(
+                                                                    R.string.terminal_deleted_file,
+                                                                    entry.name,
+                                                                ),
+                                                                Toast.LENGTH_SHORT,
+                                                            )
+                                                            .show()
+                                                    }
+                                                }
+                                                .onFailure {
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(
+                                                                context,
+                                                                context.getString(
+                                                                    R.string.terminal_delete_failed,
+                                                                    it.message.orEmpty(),
+                                                                ),
+                                                                Toast.LENGTH_LONG,
+                                                            )
+                                                            .show()
+                                                    }
+                                                }
+                                        }
+                                    },
+                                    onDismiss = { pendingDeleteEntry = null },
+                                ) {
+                                    ChuText(
+                                        stringResource(R.string.terminal_delete_warning),
+                                        style = typography.body,
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(modifier = Modifier.weight(1f)) {
+                                TerminalCanvas(
+                                    snapshot = snapshot,
+                                    fontSizeSp = terminalFontSizeSp,
+                                    minFontSizeSp = SettingsRepository.MIN_TERMINAL_FONT_SIZE,
+                                    maxFontSizeSp = SettingsRepository.MAX_TERMINAL_FONT_SIZE,
+                                    cursorColor =
+                                        ghosttyTheme?.cursorColor
+                                            ?: Color.White.copy(alpha = 0.28f),
+                                    cursorTextColor = ghosttyTheme?.cursorText,
+                                    selectionBackgroundColor =
+                                        ghosttyTheme?.selectionBackground
+                                            ?: colors.accent.copy(alpha = 0.45f),
+                                    selectionForegroundColor =
+                                        ghosttyTheme?.selectionForeground ?: colors.onAccent,
+                                    selection = selection,
+                                    onSelectionChange = { selection = it },
+                                    terminalHandle = sessionState.handle,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onResize = vm::onCanvasSizeChanged,
+                                    onTap = requestInputFocus,
+                                    onPrimaryClick = vm::onPrimaryMouseClick,
+                                    onAppSelectionDrag = vm::onAppSelectionDrag,
+                                    onScroll = vm::onScroll,
+                                    onFontSizeChange = { sizeSp -> terminalFontSizeSp = sizeSp },
+                                    onSelectionChanged = { state -> selectionState = state },
+                                )
+
+                                Row(
+                                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (isReconnecting) {
+                                        ChuText(
+                                            text =
+                                                if (sessionState.reconnectAttempt > 0) {
+                                                    stringResource(
+                                                        R.string.terminal_reconnecting_attempt,
+                                                        sessionState.reconnectAttempt,
+                                                    )
+                                                } else {
+                                                    stringResource(R.string.terminal_reconnecting)
+                                                },
+                                            style = typography.labelSmall,
+                                            color = colors.error,
+                                        )
+                                    }
+                                    if (multiplexerState.duplicateLoading) {
+                                        ChuText(
+                                            text = stringResource(R.string.terminal_preparing_mux),
+                                            style = typography.labelSmall,
+                                            color = colors.textMuted,
+                                        )
+                                    }
+                                    if (pwdText != null) {
+                                        ChuText(
+                                            text = pwdText,
+                                            style = typography.labelSmall,
+                                            color = colors.textPrimary.copy(alpha = 0.7f),
+                                        )
+                                    }
+                                }
+
+                                val selState = selectionState
+                                if (selState != null) {
+                                    val sel = selection
+                                    val isAnchorStart = sel != null && sel.anchorIndex <= sel.focusIndex
+                                    TerminalSelectionHandle(
+                                        tipX = selState.startOffset.x,
+                                        tipY = selState.startOffset.y + selState.cellHeightPx / 2f,
+                                        color = colors.accent,
+                                        borderColor = colors.background,
+                                        cellWidthPx = selState.cellWidthPx,
+                                        cellHeightPx = selState.cellHeightPx,
+                                        cols = selState.cols,
+                                        startCellProvider = {
+                                            val s = selection
+                                            if (s != null) minOf(s.anchorIndex, s.focusIndex) else 0
+                                        },
+                                        onDragToCell = { newCell ->
+                                            selection = selection?.withStart(newCell, updateAnchor = isAnchorStart)
+                                        },
+                                    )
+                                    TerminalSelectionHandle(
+                                        tipX = selState.endOffset.x,
+                                        tipY = selState.endOffset.y - selState.cellHeightPx / 2f,
+                                        color = colors.accent,
+                                        borderColor = colors.background,
+                                        cellWidthPx = selState.cellWidthPx,
+                                        cellHeightPx = selState.cellHeightPx,
+                                        cols = selState.cols,
+                                        startCellProvider = {
+                                            val s = selection
+                                            if (s != null) maxOf(s.anchorIndex, s.focusIndex) else 0
+                                        },
+                                        onDragToCell = { newCell ->
+                                            selection = selection?.withEnd(newCell, updateAnchor = !isAnchorStart)
+                                        },
+                                    )
+
+                                    val menuGapPx = with(density) { 8.dp.toPx() }
+                                    val selLeft = selState.boundsLeft
+                                    val selRight = selState.boundsRight
+                                    val selTop = selState.boundsTop
+                                    val selBottom = selState.boundsBottom
+                                    val centerX = (selLeft + selRight) / 2f
+                                    val menuWidth = menuSize.width.coerceAtLeast(1)
+                                    val menuHeight = menuSize.height.coerceAtLeast(1)
+                                    val maxMenuX = (selState.canvasWidthPx - menuWidth).coerceAtLeast(0)
+                                    val menuX = (centerX - menuWidth / 2f).toInt().coerceIn(0, maxMenuX)
+                                    val aboveY = (selTop - menuHeight - menuGapPx).toInt()
+                                    val belowY = (selBottom + menuGapPx).toInt()
+                                    val maxMenuY = (selState.canvasHeightPx - menuHeight).coerceAtLeast(0)
+                                    val menuY = if (aboveY >= 0) aboveY else belowY.coerceIn(0, maxMenuY)
+                                    Row(
+                                        modifier =
+                                            Modifier.offset { IntOffset(menuX, menuY) }
+                                                .onGloballyPositioned { menuSize = it.size }
+                                                .background(colors.background)
+                                                .border(1.dp, colors.border)
+                                                .padding(horizontal = 4.dp, vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (!selState.text.isNullOrEmpty()) {
+                                            ChuButton(
+                                                onClick = ::copySelection,
+                                                variant = ChuButtonVariant.Ghost,
+                                                bracketed = true,
+                                                borderColor = colors.textMuted,
+                                                contentPadding =
+                                                    PaddingValues(
+                                                        horizontal = 12.dp,
+                                                        vertical = 6.dp,
+                                                    ),
+                                            ) {
+                                                ChuText(
+                                                    stringResource(R.string.action_copy),
+                                                    style = typography.label,
+                                                    color = colors.textMuted,
+                                                )
+                                            }
+                                        }
+                                        if (hasClipboardText) {
+                                            ChuButton(
+                                                onClick = { pasteClipboard() },
+                                                variant = ChuButtonVariant.Ghost,
+                                                bracketed = true,
+                                                borderColor = colors.textMuted,
+                                                contentPadding =
+                                                    PaddingValues(
+                                                        horizontal = 12.dp,
+                                                        vertical = 6.dp,
+                                                    ),
+                                            ) {
+                                                ChuText(
+                                                    stringResource(R.string.action_paste),
+                                                    style = typography.label,
+                                                    color = colors.textMuted,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                AndroidView(
+                                    modifier =
+                                        Modifier.align(Alignment.BottomStart).size(1.dp).alpha(0f),
+                                    factory = { viewContext ->
+                                        TerminalInputView(viewContext)
+                                            .apply {
+                                                onTerminalText = { text ->
+                                                    if (!chuchuKeys.handleText(text)) {
+                                                        vm.dispatchTextWithModifierState(
+                                                            text,
+                                                            modifierState,
+                                                        )
+                                                    }
+                                                }
+                                                onTerminalKey = { key, codepoint, mods, action, charCode ->
+                                                    var shouldForwardToTerminal = true
+                                                    val overlayOpen = showTabSheet
+                                                    val overlayTabs = hostSessionIds
+                                                    if (
+                                                        overlayOpen &&
+                                                            overlayTabs.isEmpty() &&
+                                                            action == GhosttyKeyAction.Press &&
+                                                            key == TerminalSpecialKey.Escape.engineKey
+                                                    ) {
+                                                        showTabSheet = false
+                                                        shouldForwardToTerminal = false
+                                                    } else if (overlayOpen && overlayTabs.isNotEmpty()) {
+                                                        var consumedByTabSwitcher = true
+                                                        val isPress =
+                                                            action == GhosttyKeyAction.Press
+                                                        if (isPress && chuchuKeys.isPrefixActive) {
+                                                            when (
+                                                                codepoint.toChar().lowercaseChar()
+                                                            ) {
+                                                                'n' -> {
+                                                                    vm.duplicateActiveTab()
+                                                                    vm.selectConnectionTab(
+                                                                        ConnectionTab.Terminal
+                                                                    )
+                                                                    showTabSheet = false
+                                                                }
+                                                                't' -> { showTabSheet = true }
+                                                                else -> {}
+                                                            }
+                                                            chuchuKeys.reset()
+                                                            shouldForwardToTerminal = false
+                                                            consumedByTabSwitcher = true
+                                                        }
+                                                        if (isPress) {
+                                                            when (key) {
+                                                                TerminalSpecialKey.Left.engineKey,
+                                                                TerminalSpecialKey.Up.engineKey ->
+                                                                    focusedTabIndex =
+                                                                        (focusedTabIndex - 1).mod(
+                                                                            overlayTabs.size
+                                                                        )
+
+                                                                TerminalSpecialKey.Right.engineKey,
+                                                                TerminalSpecialKey.Down.engineKey ->
+                                                                    focusedTabIndex =
+                                                                        (focusedTabIndex + 1).mod(
+                                                                            overlayTabs.size
+                                                                        )
+
+                                                                TerminalSpecialKey.Enter
+                                                                    .engineKey -> {
+                                                                    overlayTabs
+                                                                        .getOrNull(focusedTabIndex)
+                                                                        ?.let {
+                                                                            vm.selectTab(it.id)
+                                                                            showTabSheet = false
+                                                                        }
+                                                                }
+
+                                                                TerminalSpecialKey.Escape
+                                                                    .engineKey -> {
+                                                                    showTabSheet = false
+                                                                }
+
+                                                                else ->
+                                                                    consumedByTabSwitcher = false
+                                                            }
+                                                        }
+                                                        if (consumedByTabSwitcher) {
+                                                            shouldForwardToTerminal = false
+                                                        }
+                                                    }
+                                                    if (shouldForwardToTerminal) {
+                                                        val mergedMods =
+                                                            mods or modifierState.terminalMods()
+                                                        vm.onHardwareKey(
+                                                            key,
+                                                            codepoint,
+                                                            mergedMods,
+                                                            action,
+                                                            charCode,
+                                                        )
+                                                    }
+                                                }
+                                                setOnFocusChangeListener { _, hasFocus ->
+                                                    vm.onFocusChanged(hasFocus)
+                                                    if (hasFocus) {
+                                                        showKeyboard(inputMethodManager)
+                                                    }
+                                                }
+                                            }
+                                            .also { view -> inputViewRef.value = view }
+                                    },
+                                    update = { view ->
+                                        if (inputViewRef.value == null) {
+                                            inputViewRef.value = view
+                                        }
+                                        view.disableAutocorrect = disableAutocorrect
+                                    },
+                                )
+
+                                if (currentTerminalCustomKeyGroups.isNotEmpty() &&
+                                    (showCustomActionsFab || fabFilteredActions != null)
+                                ) {
+                                    TerminalCustomActionsFab(
+                                        groups = currentTerminalCustomKeyGroups,
+                                        onActionClick = { action ->
+                                            val decoded = decodeCustomActionValue(action.payload)
+                                            val rawText =
+                                                decoded.text +
+                                                    if (
+                                                        CustomActionModifier.Enter in
+                                                            decoded.modifiers
+                                                    )
+                                                        "\n"
+                                                    else ""
+                                            val actionModifierState =
+                                                modifierStateForCustomAction(decoded.modifiers)
+                                            vm.dispatchTextWithModifierState(
+                                                rawText,
+                                                actionModifierState,
+                                            )
+                                            requestInputFocus()
+                                        },
+                                        modifier =
+                                            Modifier.align(Alignment.BottomEnd)
+                                                .padding(end = 14.dp, bottom = 12.dp),
+                                        filteredActions = fabFilteredActions,
+                                        onClearFilter = { fabFilteredActions = null },
+                                    )
+                                }
+
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = chuchuKeys.isPrefixActive,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth(),
+                                ) {
+                                    Row(
+                                        modifier =
+                                            Modifier.fillMaxWidth()
+                                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                                .background(colors.surface)
+                                                .border(1.dp, colors.border)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        ChuText(
+                                            "⌘",
+                                            style = typography.label,
+                                            color = colors.accent,
+                                            modifier = Modifier.width(24.dp),
+                                        )
+                                        FlowRow(
+                                            modifier = Modifier.weight(1f),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                                        ) {
+                                            chuchuKeys.hints().forEach { hint ->
+                                                ChuText(
+                                                    "${hint.key}: ${hint.description}",
+                                                    style = typography.labelSmall,
+                                                    color = colors.textSecondary,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (selectedTab == ConnectionTab.Terminal) {
+                            localShellFilesMessage?.let { message ->
+                                ChuText(
+                                    text = message,
+                                    style = typography.labelSmall,
+                                    color = colors.textSecondary,
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            .semantics { liveRegion = LiveRegionMode.Polite },
+                                )
+                            }
+                            KeyboardAccessoryBar(
+                                entries = accessoryLayout,
+                                modifierState = modifierState,
+                                onAction = ::dispatchAccessoryAction,
+                                onSettings = onOpenSettings,
+                                onChuchuKey = {
+                                    chuchuKeys.togglePrefix()
+                                    requestInputFocus()
+                                },
+                                chuchuKeyActive = chuchuKeys.isPrefixActive,
+                                onOpenFiles = {
+                                    if (filesSupported) {
+                                        vm.selectConnectionTab(ConnectionTab.Files)
+                                    } else {
+                                        showLocalShellFilesUnsupported()
+                                    }
+                                },
+                                useSingleRow = useSingleRowAccessoryBar,
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                        }
+                    }
+                }
+
+                val uploadProgress = fileBrowserState.uploadProgress
+                if (uploadProgress != null) {
+                    UploadProgressDialog(progress = uploadProgress)
+                }
+                if (showTabSheet) {
+                    val paletteAccessoryAction: (AccessoryAction) -> Unit = { action ->
+                        if (
+                            !(action is AccessoryAction.SendText &&
+                                chuchuKeys.handleText(action.text))
+                        ) {
+                            if (chuchuKeys.isPrefixActive) {
+                                chuchuKeys.reset()
+                            }
+                            val preDispatchModifierState = modifierState
+                            val result =
+                                TerminalAccessoryDispatcher.dispatch(action, preDispatchModifierState)
+                            modifierState = result.modifierState
+
+                            // Mirror main-handler IME suppression
+                            if (result.suppressImeInput) {
+                                inputViewRef.value?.armInputSuppression(action.toString())
+                            }
+
+                            when (result.specialKey) {
+                                TerminalSpecialKey.Left,
+                                TerminalSpecialKey.Up -> {
+                                    if (hostSessionIds.isNotEmpty())
+                                        focusedTabIndex =
+                                            (focusedTabIndex - 1).mod(hostSessionIds.size)
+                                }
+                                TerminalSpecialKey.Right,
+                                TerminalSpecialKey.Down -> {
+                                    if (hostSessionIds.isNotEmpty())
+                                        focusedTabIndex =
+                                            (focusedTabIndex + 1).mod(hostSessionIds.size)
+                                }
+                                TerminalSpecialKey.Enter -> {
+                                    hostSessionIds.getOrNull(focusedTabIndex)?.let {
+                                        vm.selectTab(it.id)
+                                        showTabSheet = false
+                                    }
+                                }
+                                TerminalSpecialKey.Escape -> {
+                                    showTabSheet = false
+                                }
+                                else -> {
+                                    result.specialKey?.let { key ->
+                                        vm.onSpecialKeyInput(
+                                            key,
+                                            preDispatchModifierState.terminalMods(),
+                                        )
+                                    }
+                                    result.text?.let { text ->
+                                        if (!chuchuKeys.handleText(text)) {
+                                            vm.onTextInput(text)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Preserve sticky modifiers: paste applies active modifiers
+                            // but does not clear them.
+                            if (result.shouldPaste) {
+                                pasteClipboard()
+                            }
+                        }
+                    }
+                    CommandPalette(
+                        tabs = hostSessionIds,
+                        activeTabId = activeTabId,
+                        focusedTabIndex = focusedTabIndex,
+                        onFocusedTabIndexChange = { focusedTabIndex = it },
+                        accessoryEntries = accessoryLayout,
+                        accessoryModifierState = modifierState,
+                        onAccessoryAction = paletteAccessoryAction,
+                        onChuchuKey = { chuchuKeys.togglePrefix() },
+                        chuchuKeyActive = chuchuKeys.isPrefixActive,
+                        onOpenFiles = {
+                            if (filesSupported) {
+                                vm.selectConnectionTab(ConnectionTab.Files)
+                                showTabSheet = false
+                            } else {
+                                showLocalShellFilesUnsupported()
+                            }
+                        },
+                        onOpenSettings = onOpenSettings,
+                        useSingleRowAccessoryBar = useSingleRowAccessoryBar,
+                        onSelectTab = {
+                            vm.selectTab(it)
+                            showTabSheet = false
+                        },
+                        onCloseTab = vm::closeTab,
+                        onAddTab = {
+                            vm.duplicateActiveTab()
+                            showTabSheet = false
+                        },
+                        onDismiss = { showTabSheet = false },
+                        multiplexerEnabled = activeTab?.spec?.usesRuntimeMultiplexer == true,
+                        multiplexerSessions = multiplexerState.sessions,
+                        multiplexerSessionsLoading = multiplexerState.sessionsLoading,
+                        multiplexerSessionsError = multiplexerState.sessionsError,
+                        onMultiplexerRefresh = vm::listMultiplexerSessionsForCurrentHost,
+                        onMultiplexerNew = vm::createNextMultiplexerSession,
+                        onMultiplexerAttach = { name ->
+                            vm.switchToMultiplexerSession(name, multiplexerState.sessionsSourceTabId)
+                        },
+                    )
+                }
+
+            } else {
+                Column(
+                    modifier = screenInsetsModifier.fillMaxSize().padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    val hostForMessage = activeTab?.spec?.host?.let { " $it" } ?: ""
+                    val message =
+                        if (isReconnecting) {
+                            stringResource(R.string.terminal_reconnecting_to, hostForMessage)
+                        } else {
+                            stringResource(R.string.terminal_preparing)
+                        }
+                    ChuText(message, style = typography.body)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * What is left after a session ends: the last screen it painted, frozen, and a way back.
+ *
+ * The app-side session is already gone by the time this shows (the repository closes a session that
+ * reached Disconnected), so nothing here is live — no input, no keyboard, no reconnect.
+ */
+@Composable
+private fun SessionEndedScreen(
+    snapshot: TerminalSnapshot?,
+    fontSizeSp: Float,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    // The session is over, so the keyboard it left up has no reason to stay.
+    KeepImeClosed()
+    Column(modifier = modifier.fillMaxSize().background(colors.background)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ChuText(
+                stringResource(R.string.session_ended),
+                style = typography.body,
+                color = colors.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+            ChuButton(
+                onClick = onBack,
+                variant = ChuButtonVariant.Outlined,
+                bracketed = true,
+                borderColor = colors.accent,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                ChuText(stringResource(R.string.action_back), style = typography.label, color = colors.accent)
+            }
+        }
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.border))
+        if (snapshot != null) {
+            TerminalCanvas(
+                snapshot = snapshot,
+                fontSizeSp = fontSizeSp,
+                // Natural size, drawn from the top: the frozen screen should read like the session
+                // did, not like a thumbnail stretched over the page.
+                fitSnapshotToCanvas = false,
+                enableGestures = false,
+                cursorColor = Color.Transparent,
+                selectionBackgroundColor = Color.Transparent,
+                selectionForegroundColor = Color.Transparent,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TerminalRecoveryActions(
+    message: String,
+    isMultiplexerPreflight: Boolean,
+    dismissMultiplexerLabel: String? = null,
+    onRetryMultiplexer: () -> Unit,
+    onBack: () -> Unit,
+    onReconnect: () -> Unit,
+) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        ChuText(message, color = colors.error, style = typography.body)
+        Spacer(modifier = Modifier.height(16.dp))
+        if (isMultiplexerPreflight) {
+            ChuButton(
+                onClick = onRetryMultiplexer,
+                modifier = Modifier.fillMaxWidth(),
+                variant = ChuButtonVariant.Filled,
+            ) {
+                ChuText(
+                    stringResource(R.string.terminal_retry_multiplexer),
+                    style = typography.label,
+                    color = colors.onAccent,
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            ChuButton(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth(),
+                variant = ChuButtonVariant.Ghost,
+                bracketed = true,
+                borderColor = colors.textMuted,
+            ) {
+                ChuText(
+                    dismissMultiplexerLabel ?: stringResource(R.string.action_back),
+                    style = typography.label,
+                    color = colors.textMuted,
+                )
+            }
+        } else {
+            ChuButton(
+                onClick = onReconnect,
+                modifier = Modifier.fillMaxWidth(),
+                variant = ChuButtonVariant.Filled,
+            ) {
+                ChuText(
+                    stringResource(R.string.action_retry),
+                    style = typography.label,
+                    color = colors.onAccent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UploadProgressDialog(progress: UploadProgress) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    val barWidthDp = 240.dp
+    val barHeightDp = 12.dp
+    val filledWidth =
+        if (progress.totalBytes > 0) {
+            barWidthDp * progress.percent.coerceAtMost(100) / 100f
+        } else {
+            // Unknown total: show a thin sliver as indeterminate indicator
+            barWidthDp * 0.15f
+        }
+
+    Box(
+        modifier =
+            Modifier.fillMaxSize().background(colors.background.copy(alpha = 0.7f)).clickable(
+                enabled = false
+            ) {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier =
+                Modifier.background(colors.surfaceVariant)
+                    .border(1.dp, colors.border)
+                    .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ChuText(
+                "\u2500\u2500\u25B2\u2500\u2500",
+                style = typography.title,
+                color = colors.accent,
+            )
+
+            ChuText(text = progress.fileName, style = typography.body, color = colors.textPrimary)
+
+            if (progress.totalFiles > 1) {
+                ChuText(
+                    text =
+                        stringResource(
+                            R.string.terminal_file_progress,
+                            progress.fileIndex + 1,
+                            progress.totalFiles,
+                        ),
+                    style = typography.labelSmall,
+                    color = colors.textMuted,
+                )
+            }
+
+            Box(
+                modifier =
+                    Modifier.width(barWidthDp)
+                        .height(barHeightDp)
+                        .background(colors.surface)
+                        .border(1.dp, colors.border),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Box(
+                    modifier = Modifier.width(filledWidth).fillMaxHeight().background(colors.accent)
+                )
+            }
+
+            ChuText(
+                text =
+                    if (progress.totalBytes > 0) {
+                        val written = formatFileSize(progress.bytesWritten)
+                        val total = formatFileSize(progress.totalBytes)
+                        "$written / $total  ${progress.percent}%"
+                    } else {
+                        formatFileSize(progress.bytesWritten)
+                    },
+                style = typography.labelSmall,
+                color = colors.textMuted,
+            )
+        }
+    }
+}

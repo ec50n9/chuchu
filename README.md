@@ -1,54 +1,66 @@
-<p align="center">
-  <img src="./assets/logo.png" alt="Chuchu logo" width="48" height="48" />
-</p>
+<h1 align="center">Roost</h1>
 
-<h1 align="center">Chuchu</h1>
+<p align="center">Your sessions stay on the server. This app is only the remote control.</p>
 
-<p align="center">
- A Modern, Better, Native Android SSH client powered by libghostty
-</p>
-
-<p align="center">
-  <a href="https://github.com/jossephus/chuchu/releases/latest">Download Latest</a> ·
-  <a href="https://github.com/jossephus/chuchu/releases/">ChangeLog</a> ·
-</p>
+<p align="center">A native Android client for tmux / zmx on top of libghostty.</p>
 
 ---
 
+> **Fork of [jossephus/chuchu](https://github.com/jossephus/chuchu)** (MIT, see [LICENSE](./LICENSE)).
+> Roost diverged at the commit that removed the tab concept and is going its own way.
+> The application id changed, so **Roost and Chuchu cannot be installed side by side and do
+> not share data** — export an encrypted backup from Chuchu and import it into Roost.
 
-<table align="center" cellpadding="10">
-  <tr>
-    <td><img src="./assets/sample-3.jpg" alt="Chuchu sample 3" height="420" /></td>
-    <td><img src="./assets/sample-2.jpg" alt="Chuchu sample 2" height="420" /></td>
-    <td><img src="./assets/sample-1.jpg" alt="Chuchu sample 1" height="420" /></td>
-    <td><img src="./assets/sample-4.jpg" alt="Chuchu sample 4" height="420" /></td>
-</table>
+## Why sessions, not tabs
 
-Chuchu is a native Android SSH client powered by libghostty, a terminal-first Compose UI, and has support for both standard SSH and Tailscale SSH workflows.
+A terminal session's lifetime lives on the server, not on the phone. tmux / zmx keep the
+process alive; Roost only attaches back to it. So there is no tab concept here: the local app
+holds no "session container", and the server list simply shows the sessions the server has.
 
-### Features 
+Staying connected is two layers stacked, and one alone is not enough:
+
+- **mosh** — roaming and network changes (transport layer)
+- **multiplexer (tmux / zmx)** — the process keeps running even if the app is killed (process layer)
+
+Plain SSH (no multiplexer) is a fallback for first contact and emergencies, not the main path.
+
+## Features
+
 - tailscale, ssh password + key authentication
-- image display using libghostty's kitty image protocol support
+- session-first server list: each host card lists its remote sessions, jump straight into one
+- mosh for roaming, tmux / zmx for persistent remote sessions
 - more than 400 themes from the official ghostty repository
 - configurable accessory keys and custom terminal actions
-- per-host post-connect actions that autorun a selected custom action after SSH/Mosh connects or reconnects
+- per-host post-connect actions that autorun after SSH/Mosh connects or reconnects
 - encrypted local import/export backups for SSH keys and server profiles
-- beautiful and working terminal renderer with fully working resize, scrollback, focus, modifier keys, mouse actions 
+- image display using libghostty's kitty image protocol support
+- terminal renderer with working resize, scrollback, focus, modifier keys and mouse actions
 
 ## Status
 
-Chuchu is in active development. I am daily driving it and improving any issues i found in the way. Join the journey and report any bugs you find. And I welcome any contributions.
+Daily driven and changing fast. The current priority is making "never lose a session" true in
+practice — automatic reconnect and automatic re-attach when the app returns to the foreground.
+See the roadmap in the repo's local planning notes.
 
+## Getting Started
 
-### Getting Started
-
-Checkout our [releases](https://github.com/jossephus/chuchu/releases) and download the APK from there.
+Download the APK from [releases](https://github.com/ec50n9/chuchu/releases).
 
 - **Stable:** the latest non-prerelease build
-- **Nightly:** every push to `main` publishes a rolling prerelease at the [`nightly`](https://github.com/jossephus/chuchu/releases/tag/nightly) tag
+- **Nightly:** every push to `main` publishes a rolling prerelease at the [`nightly`](https://github.com/ec50n9/chuchu/releases/tag/nightly) tag
 
-I don't have a personal Play Store account right now (and I can't open one because of the payment limitation in my country, feel free to contact me if you want to publish it.)
+## How Roost differs from upstream
 
+- No tabs: `TerminalTabStrip`, `TerminalTabManager` and `NewTabHostPicker` are gone; navigation
+  is session-based (`terminal/session/{sessionId}`), and the terminal screen switches sessions
+  through one per-host switcher
+- The server list is the session hub: new session, refresh and jump-in live on the host card
+- New tmux sessions are named `roost-N`; sessions created before the rename (`chuchu-N`) are
+  still recognized and reusable
+- The backup file extension stays `chuchu-backup` on purpose, so backups exported from Chuchu
+  remain importable
+- Upstream bug fixes are cherry-picked when they apply. Roost does not send pull requests
+  upstream and does not carry opt-in switches just to stay mergeable
 
 ## Stack
 
@@ -58,14 +70,13 @@ I don't have a personal Play Store account right now (and I can't open one becau
 - `libssh2` + `openssl` for the current native SSH path
 - Room for local data storage
 
-
 ### Development - Prerequisites
 
 If you have nix installed, the following three steps will get you started
 
 1. nix develop - will set you up with everything you will need.
-2. running 'make build' will build the native code needed 
-3. running 'make app' will build the apk and install it in a connected device. 
+2. running 'make build' will build the native code needed
+3. running 'make app' will build the apk and install it in a connected device.
 
 If you don't have nix installed, you will need
 
@@ -80,9 +91,10 @@ Set `ANDROID_NDK_HOME` or `ANDROID_NDK_ROOT`, then build the JNI library for And
 zig build jni -Dtarget=aarch64-linux-android
 ```
 
-That copies `libchuchu_jni.so` into `app/src/main/jniLibs/arm64-v8a/`.
+That copies `libchuchu_jni.so` into `app/src/main/jniLibs/arm64-v8a/` (the `chuchu_jni` library
+name is kept from upstream; it is internal to the JNI bridge).
 
-3. From android studio run 
+3. From android studio run
 ```sh
 ./gradlew assembleDebug
 ```
@@ -96,16 +108,15 @@ cd android && ./gradlew assembleDebug
 
 The APK should include `lib/arm64-v8a/libchuchu_jni.so`; without it native SSH/key generation will fail on device.
 
-## Inspiration
+## Name
 
-I have been using [vvterm](https://github.com/vivy-company/vvterm) on iOS for the past few weeks and i really liked it.  This project came from my desire to have native ssh client but for android.
+`Roost` — the place a bird comes back to. That is what this app is: you leave, the session stays,
+you return and it is still there.
 
-## Project Name
-chuchu is one of my favorite characters from the amharic book [Yesinbit Kelemat](https://www.goodreads.com/book/show/30759971) [translated to colors of adios]. 
+## Credits
 
-## Demo
-
-<p align="center">
-  <img src="./assets/chuchu_demo.gif" width="400" alt="Chuchu demo" />
-</p>
-
+Built on [jossephus/chuchu](https://github.com/jossephus/chuchu), which in turn came from the
+author's wish for a native Android SSH client after using
+[vvterm](https://github.com/vivy-company/vvterm) on iOS. The upstream name `chuchu` is a character
+from the Amharic book [Yesinbit Kelemat](https://www.goodreads.com/book/show/30759971) — that story
+is the upstream author's, and stays credited to them here.

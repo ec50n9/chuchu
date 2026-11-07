@@ -48,7 +48,7 @@ fn handleFromClient(client: *anyopaque) c.jlong {
 // NativeMoshBridge JNI exports
 // ---------------------------------------------------------------------------
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeCreate(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeCreate(
     env: *c.JNIEnv,
     thiz: c.jobject,
     j_config_json: c.jstring,
@@ -71,7 +71,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeCreate(
     return handleFromClient(handle.?);
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeStart(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeStart(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -82,7 +82,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeStart(
     return mosh.ffi.mosh_client_start(raw);
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeSendInput(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeSendInput(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -104,7 +104,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeSendInpu
     return mosh.ffi.mosh_client_send_input(raw, ptr, @intCast(len));
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeResize(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeResize(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -117,7 +117,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeResize(
     return mosh.ffi.mosh_client_resize(raw, cols, rows);
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeMaintenanceTick(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeMaintenanceTick(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -128,7 +128,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeMaintena
     return mosh.ffi.mosh_client_maintenance_tick(raw);
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePumpNetwork(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativePumpNetwork(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -142,7 +142,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePumpNetw
 /// outMeta must be a long[5] array. On success it is filled with:
 /// [0] = event_type, [1] = written, [2] = cols, [3] = rows, [4] = echo_ack
 /// Returns the C error code (0 = ok).
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePollOutput(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativePollOutput(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -200,7 +200,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePollOutp
 /// [0] = state, [1] = last_failure_code, [2] = last_state_num_sent,
 /// [3] = last_state_num_received, [4] = pending_outbound,
 /// [5] = pending_host_ops, [6] = current_rto_ms
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePollState(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativePollState(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -229,7 +229,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativePollStat
     return rc;
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeStop(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeStop(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,
@@ -240,7 +240,7 @@ export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeStop(
     return mosh.ffi.mosh_client_stop(raw);
 }
 
-export fn Java_com_jossephus_chuchu_service_mosh_NativeMoshBridge_nativeDestroy(
+export fn Java_io_github_ec50n9_roost_service_mosh_NativeMoshBridge_nativeDestroy(
     env: *c.JNIEnv,
     thiz: c.jobject,
     handle: c.jlong,

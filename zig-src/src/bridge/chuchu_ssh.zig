@@ -578,7 +578,7 @@ comptime {
     _ = c.libssh2_init;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeCreateSession(env: *c.JNIEnv, thiz: c.jobject) callconv(.c) c.jlong {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeCreateSession(env: *c.JNIEnv, thiz: c.jobject) callconv(.c) c.jlong {
     _ = env;
     _ = thiz;
     _ = c.libssh2_init(0);
@@ -587,14 +587,14 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeCreateSess
     return handleFromSession(session);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeDestroySession(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeDestroySession(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return;
     destroyNativeSshSession(session);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeConnect(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, host: c.jstring, port: c.jint, username: c.jstring, ipv4_only: c.jboolean) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeConnect(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, host: c.jstring, port: c.jint, username: c.jstring, ipv4_only: c.jboolean) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const host_slice = jniDupString(env, host) orelse {
@@ -690,7 +690,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeConnect(en
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthenticateNone(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeAuthenticateNone(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
@@ -747,26 +747,26 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthentica
     }
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGetLastError(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGetLastError(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     return jniNewStringOrNull(env, session.last_error.items);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGetHostKey(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jbyteArray {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGetHostKey(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jbyteArray {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     if (session.hostkey_ptr == null or session.hostkey_len == 0) return null;
     return jniNewByteArrayOrNull(env, session.hostkey_ptr.?[0..session.hostkey_len]);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGetHostKeyAlgorithm(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGetHostKeyAlgorithm(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     return jniNewStringOrNull(env, hostkeyAlgorithmName(session.hostkey_type));
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthenticatePassword(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, password: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeAuthenticatePassword(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, password: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -806,7 +806,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthentica
     }
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthenticatePublicKey(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, key_path: c.jstring, passphrase: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeAuthenticatePublicKey(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, key_path: c.jstring, passphrase: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -874,7 +874,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthentica
     return c.JNI_FALSE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthenticatePublicKeyMemory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, public_key_open_ssh: c.jstring, private_key_pem: c.jstring, passphrase: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeAuthenticatePublicKeyMemory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, public_key_open_ssh: c.jstring, private_key_pem: c.jstring, passphrase: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -960,7 +960,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeAuthentica
     return c.JNI_FALSE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenShell(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeOpenShell(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -1038,7 +1038,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenShell(
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenExec(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeOpenExec(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -1104,7 +1104,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenExec(e
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenExecPty(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command: c.jstring, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeOpenExecPty(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command: c.jstring, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const ssh_session = session.session orelse {
@@ -1190,7 +1190,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeOpenExecPt
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeChannelEof(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeChannelEof(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_TRUE;
@@ -1202,7 +1202,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeChannelEof
     return if (c.libssh2_channel_eof(channel) == 1) c.JNI_TRUE else c.JNI_FALSE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeResize(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeResize(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint) callconv(.c) c.jboolean {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
@@ -1221,7 +1221,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeResize(env
     }
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeIpcExchange(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, request: c.jbyteArray) callconv(.c) c.jbyteArray {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeIpcExchange(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, request: c.jbyteArray) callconv(.c) c.jbyteArray {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     const req_bytes = readJByteArray(env, request) orelse return null;
@@ -1269,7 +1269,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeIpcExchang
     return jniNewByteArrayOrNull(env, response.items);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGetPeerAddress(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGetPeerAddress(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     if (session.socket_fd < 0) {
@@ -1291,7 +1291,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGetPeerAdd
     return jniNewStringOrNull(env, std.mem.sliceTo(&host_buf, 0));
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeClose(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeClose(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return;
@@ -1320,14 +1320,14 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeClose(env:
     session.socket_fd = -1;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpInit(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpInit(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     return if (ensureSftp(session) != null) c.JNI_TRUE else c.JNI_FALSE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpListDirectory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jobjectArray {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpListDirectory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jobjectArray {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     const sftp = ensureSftp(session) orelse return null;
@@ -1432,7 +1432,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpListDi
     return result;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpRealpath(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jstring {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpRealpath(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jstring {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     const sftp = ensureSftp(session) orelse return null;
@@ -1475,7 +1475,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpRealpa
     }
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpOpenWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpOpenWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const sftp = ensureSftp(session) orelse return c.JNI_FALSE;
@@ -1496,7 +1496,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpOpenWr
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpWriteChunk(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, data: c.jbyteArray) callconv(.c) c.jint {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpWriteChunk(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, data: c.jbyteArray) callconv(.c) c.jint {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return -1;
     const sftp_handle = session.upload_handle orelse return -1;
@@ -1531,7 +1531,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpWriteC
     return @intCast(written);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpCloseWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpCloseWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jboolean {
     _ = thiz;
     _ = env;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
@@ -1540,7 +1540,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpCloseW
     return if (closeSftpHandle(session, sftp_handle, "SFTP close")) c.JNI_TRUE else c.JNI_FALSE;
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpReadFile(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring, max_bytes: c.jint) callconv(.c) c.jbyteArray {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpReadFile(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring, max_bytes: c.jint) callconv(.c) c.jbyteArray {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     const sftp = ensureSftp(session) orelse return null;
@@ -1598,7 +1598,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpReadFi
     return jniNewByteArrayOrNull(env, out.items);
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpDeleteFile(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpDeleteFile(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const sftp = ensureSftp(session) orelse return c.JNI_FALSE;
@@ -1620,7 +1620,7 @@ export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpDelete
     }
 }
 
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeSftpDeleteDirectory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeSftpDeleteDirectory(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, path: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const sftp = ensureSftp(session) orelse return c.JNI_FALSE;
@@ -1931,7 +1931,7 @@ fn generateEd25519Key(
 
 /// JNI entry point: generate an Ed25519 key pair in OpenSSH format.
 /// Returns a String array [privateKeyPem, publicKeyOpenSsh], or null on error.
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeGenerateEd25519Key(
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGenerateEd25519Key(
     env: *c.JNIEnv,
     thiz: c.jobject,
     j_comment: c.jstring,
@@ -2007,7 +2007,7 @@ fn derivePublicKeyOpenSsh(
 
 /// JNI entry point: derive [algorithm, publicKeyOpenSsh] from an OpenSSH-format
 /// private key PEM. Returns null if the key is not OpenSSH format or malformed.
-export fn Java_com_jossephus_chuchu_service_ssh_NativeSshBridge_nativeDerivePublicKey(
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeDerivePublicKey(
     env: *c.JNIEnv,
     thiz: c.jobject,
     j_private_pem: c.jstring,

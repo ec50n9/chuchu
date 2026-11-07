@@ -19,7 +19,7 @@
         android:theme="@style/Theme.Chuchu"
         android:extractNativeLibs="false">
         <activity
-            android:name="com.jossephus.chuchu.MainActivity"
+            android:name="io.github.ec50n9.roost.MainActivity"
             android:enabled="true"
             android:exported="true"
             android:label="@string/app_name"
@@ -33,7 +33,7 @@
         </activity>
 
         <service
-            android:name="com.jossephus.chuchu.service.terminal.SessionForegroundService"
+            android:name="io.github.ec50n9.roost.service.terminal.SessionForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">

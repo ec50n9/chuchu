@@ -1,5 +1,17 @@
 # AGENTS.md
 
+## Project
+
+Roost is an Android client for tmux/zmx sessions, forked from jossephus/chuchu (MIT).
+The session's lifetime belongs to the server: the app only attaches back to it. Consequences
+that shape every change here:
+
+- No tab concept. Navigation is session-based; the server list is the session hub.
+- Plain SSH is a fallback for first contact and emergencies, not a main path.
+- Do not add opt-in switches to stay mergeable with upstream. Change the default behavior.
+- Keep the `chuchu-backup` file extension and the `libchuchu_jni` library name: they are
+  internal identifiers, renaming them only breaks existing backups and JNI bindings.
+
 ## Zig Development
 
 Always use `zigdoc` to discover APIs for the Zig standard library and any third-party dependencies.

@@ -198,7 +198,7 @@
     <string name="verification_local_shell_subtitle">验证身份以打开本机 Shell</string>
     <string name="verification_connect_title">验证以连接</string>
     <string name="verification_connect_subtitle">验证身份以打开此主机会话</string>
-    <string name="verification_unlock_title">解锁 Chuchu</string>
+    <string name="verification_unlock_title">解锁 Roost</string>
     <string name="verification_unlock_subtitle">验证身份以继续</string>
 
     <!-- Tabs -->
@@ -216,7 +216,7 @@
     <string name="session_status_disconnected">已断开</string>
     <string name="session_status_error">出错</string>
 
-    <!-- Builtin chuchu commands -->
+    <!-- Builtin Roost commands -->
     <string name="builtin_tabs_label">标签页</string>
     <string name="builtin_tabs_description">显示标签页管理</string>
     <string name="builtin_new_tab_label">新建标签页</string>
@@ -282,7 +282,7 @@
     <!-- Session foreground notification -->
     <string name="notification_channel_name">SSH 会话</string>
     <string name="notification_channel_description">保持活动中的终端会话不被回收</string>
-    <string name="notification_title">Chuchu 已连接</string>
+    <string name="notification_title">Roost 已连接</string>
     <string name="notification_default_label">活动中的会话</string>
     <string name="notification_action_disconnect">断开</string>
 
@@ -301,7 +301,7 @@
     <string name="backup_export_success">备份导出成功</string>
     <string name="backup_export_failed">导出失败。请换一个位置重试。</string>
     <string name="backup_wrong_passphrase">口令错误，无法解密备份。</string>
-    <string name="backup_invalid_file">导入失败。请选择有效的 Chuchu 备份文件。</string>
+    <string name="backup_invalid_file">导入失败。请选择有效的 Roost 备份文件。</string>
     <string name="backup_read_failed">导入失败。无法读取所选的备份文件。</string>
     <string name="backup_import_failed_nothing_changed">导入失败，未做任何改动。</string>
     <string name="backup_import_complete">导入完成：%1$s</string>
@@ -360,7 +360,7 @@
     <string name="settings_create_quick_keys">创建快捷按键。</string>
     <string name="settings_show_actions_button">显示操作按钮</string>
     <string name="settings_show_actions_button_hint">切换终端里浮动按钮的显示状态</string>
-    <string name="settings_chuchu_commands">chuchu 命令</string>
+    <string name="settings_chuchu_commands">Roost 命令</string>
     <string name="settings_no_shortcuts">没有快捷键</string>
     <plurals name="settings_shortcuts_count">
         <item quantity="other">%1$d 个快捷键</item>
@@ -394,7 +394,7 @@
     <string name="custom_actions_key">按键</string>
     <string name="custom_actions_key_placeholder">a</string>
     <string name="custom_actions_shortcut">快捷键</string>
-    <string name="custom_actions_shortcut_placeholder">触发 chuchu 命令的单键</string>
+    <string name="custom_actions_shortcut_placeholder">触发 Roost 命令的单键</string>
     <string name="custom_actions_no_modifiers">无修饰键</string>
     <string name="custom_actions_modifiers">修饰键：%1$s</string>
     <string name="custom_actions_value">内容</string>

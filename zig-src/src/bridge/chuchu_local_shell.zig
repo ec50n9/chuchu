@@ -243,7 +243,7 @@ fn childExec(
     c._exit(127);
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeCreateSession(env: *c.JNIEnv, thiz: c.jobject) callconv(.c) c.jlong {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeCreateSession(env: *c.JNIEnv, thiz: c.jobject) callconv(.c) c.jlong {
     _ = env;
     _ = thiz;
     const session = allocator.create(NativeLocalShellSession) catch return 0;
@@ -251,7 +251,7 @@ export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nati
     return handleFromSession(session);
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeDestroySession(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeDestroySession(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return;
@@ -372,7 +372,7 @@ fn spawnLocalShellPty(
     return .{ .master_fd = master_fd, .child_pid = pid };
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeStart(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command_jstring: c.jstring, home_dir_jstring: c.jstring, temp_dir_jstring: c.jstring, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term_jstring: c.jstring) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeStart(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, command_jstring: c.jstring, home_dir_jstring: c.jstring, temp_dir_jstring: c.jstring, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint, term_jstring: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     if (session.master_fd >= 0 or session.child_pid > 0) {
@@ -404,7 +404,7 @@ export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nati
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeRead(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, max_bytes: c.jint) callconv(.c) c.jbyteArray {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeRead(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, max_bytes: c.jint) callconv(.c) c.jbyteArray {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     const fd = session.master_fd;
@@ -485,7 +485,7 @@ fn writeAllToPty(session: *NativeLocalShellSession, fd: c_int, bytes: []const u8
     return @intCast(offset);
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, data: c.jbyteArray) callconv(.c) c.jint {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeWrite(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, data: c.jbyteArray) callconv(.c) c.jint {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return -1;
     const fd = session.master_fd;
@@ -508,7 +508,7 @@ export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nati
     return writeAllToPty(session, fd, slice);
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeResize(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeResize(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, cols: c.jint, rows: c.jint, width_px: c.jint, height_px: c.jint) callconv(.c) c.jboolean {
     _ = env;
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
@@ -523,7 +523,7 @@ export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nati
     return c.JNI_TRUE;
 }
 
-export fn Java_com_jossephus_chuchu_service_terminal_NativeLocalShellBridge_nativeGetLastError(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
+export fn Java_io_github_ec50n9_roost_service_terminal_NativeLocalShellBridge_nativeGetLastError(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return null;
     return jniNewStringOrNull(env, session.last_error.items);

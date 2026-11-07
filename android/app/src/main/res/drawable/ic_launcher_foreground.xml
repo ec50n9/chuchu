@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-    android:src="@drawable/chuchu_logo_fg"
-    android:gravity="fill" />
+<!--
+  Adaptive icon foreground: a dome resting on a perch — the session stays where it was left.
+  Keep the glyph inside the 66dp safe zone (21..87) and transparent around it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M36,68 C36,44 44,34 54,34 C64,34 72,44 72,68 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M24,68 H84 V76 H24 Z" />
+</vector>
