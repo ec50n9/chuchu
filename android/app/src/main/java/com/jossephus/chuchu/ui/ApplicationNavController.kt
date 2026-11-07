@@ -68,9 +68,24 @@ fun ApplicationNavController() {
                 settingsRepo.requireAuthOnConnect.collectAsStateWithLifecycle()
             val localShellEnabled by settingsRepo.localShellEnabled.collectAsStateWithLifecycle()
             val hosts by vm.hosts.collectAsStateWithLifecycle()
+            val hostRuntime by vm.hostRuntime.collectAsStateWithLifecycle()
+            val hostKeyPrompt by vm.hostKeyPrompt.collectAsStateWithLifecycle()
             val searchQuery by vm.search.collectAsStateWithLifecycle()
+            LaunchedEffect(vm) {
+                // Back on the list, ask every linked host what it has now: sessions are created and
+                // killed from the terminal, so the rows read on connect go stale.
+                vm.refreshLinkedHosts()
+                // Opening a session is a navigation the view model decides on (it may have to
+                // attach first), so the graph just follows the requests.
+                vm.openSession.collect { sessionId ->
+                    navController.navigate("terminal/session/$sessionId")
+                }
+            }
             ServerListScreen(
                 hosts = hosts,
+                hostRuntime = hostRuntime,
+                hostKeyPrompt = hostKeyPrompt,
+                onHostKeyDecision = vm::onHostKeyDecision,
                 searchQuery = searchQuery,
                 onSearchChange = vm::updateSearchQuery,
                 onAddServer = { navController.navigate("servers/add") },
@@ -93,26 +108,38 @@ fun ApplicationNavController() {
                     },
                 onEditServer = { id -> navController.navigate("servers/edit/$id") },
                 onConnectServer = { id ->
-                    val host = hosts.firstOrNull { it.id == id }
-                    val hostRequiresAuth = host?.requireAuthOnConnect == true
-                    val mustVerify = requireAuthOnConnect || hostRequiresAuth
-                    if (!mustVerify) {
-                        navController.navigate("terminal/$id")
+                    val hostRequiresAuth = hosts.firstOrNull { it.id == id }?.requireAuthOnConnect == true
+                    if (!requireAuthOnConnect && !hostRequiresAuth) {
+                        vm.connect(id)
                     } else {
                         requireUserVerification(
                             context = context,
                             title = context.getString(R.string.verification_connect_title),
                             subtitle = context.getString(R.string.verification_connect_subtitle),
                         ) { result ->
-                            if (result == VerificationResult.Success) {
-                                navController.navigate("terminal/$id")
-                            }
+                            if (result == VerificationResult.Success) vm.connect(id)
                         }
                     }
                 },
-                // The session is already authenticated by the repository, so jumping
-                // to an open tab must not re-prompt for verification.
-                onOpenSession = { id -> navController.navigate("terminal/$id") },
+                // An already-open session is already authenticated, so opening its row must not
+                // re-prompt; a new session authenticates again, so it goes through the gate.
+                onOpenSession = { hostId, row -> vm.openSession(hostId, row) },
+                onNewSession = { id ->
+                    val hostRequiresAuth = hosts.firstOrNull { it.id == id }?.requireAuthOnConnect == true
+                    if (!requireAuthOnConnect && !hostRequiresAuth) {
+                        vm.newSession(id)
+                    } else {
+                        requireUserVerification(
+                            context = context,
+                            title = context.getString(R.string.verification_connect_title),
+                            subtitle = context.getString(R.string.verification_connect_subtitle),
+                        ) { result ->
+                            if (result == VerificationResult.Success) vm.newSession(id)
+                        }
+                    }
+                },
+                onRefreshSessions = vm::refresh,
+                onDisconnectServer = vm::disconnect,
                 onDeleteServer = vm::deleteServer,
                 onOpenSettings = { navController.navigate("settings") },
             )
@@ -136,7 +163,6 @@ fun ApplicationNavController() {
             val showCustomActionsFab by
                 settingsRepo.showCustomActionsFab.collectAsStateWithLifecycle()
             val builtinShortcuts by settingsRepo.builtinShortcuts.collectAsStateWithLifecycle()
-            val tabMode by settingsRepo.terminalTabMode.collectAsStateWithLifecycle()
             val localShellEnabled by settingsRepo.localShellEnabled.collectAsStateWithLifecycle()
             val keepScreenAwake by settingsRepo.keepScreenAwake.collectAsStateWithLifecycle()
             val hideScreenContents by settingsRepo.hideScreenContents.collectAsStateWithLifecycle()
@@ -167,8 +193,6 @@ fun ApplicationNavController() {
                 onShowCustomActionsFabChanged = settingsRepo::setShowCustomActionsFab,
                 builtinShortcuts = builtinShortcuts,
                 onBuiltinShortcutsChanged = settingsRepo::setBuiltinShortcuts,
-                currentTabMode = tabMode,
-                onTabModeChanged = settingsRepo::setTerminalTabMode,
                 themeMode = themeMode,
                 lightThemeName = lightThemeName,
                 onThemeSelected = settingsRepo::setTheme,
@@ -221,7 +245,7 @@ fun ApplicationNavController() {
                     viewModel(factory = TerminalViewModel.factory(application))
                 TerminalScreen(
                     vm = vm,
-                    hostId = null,
+                    sessionId = null,
                     openLocalShell = true,
                     onOpenSettings = { navController.navigate("settings") },
                     onBack = { navController.popBackStack() },
@@ -236,14 +260,14 @@ fun ApplicationNavController() {
             }
         }
         composable(
-            route = "terminal/{id}",
-            arguments = listOf(navArgument("id") { type = NavType.LongType }),
+            route = "terminal/session/{sessionId}",
+            arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getLong("id")
+            val sessionId = backStackEntry.arguments?.getString("sessionId")
             val vm: TerminalViewModel = viewModel(factory = TerminalViewModel.factory(application))
             TerminalScreen(
                 vm = vm,
-                hostId = id,
+                sessionId = sessionId,
                 onOpenSettings = { navController.navigate("settings") },
                 onBack = { navController.popBackStack() },
             )

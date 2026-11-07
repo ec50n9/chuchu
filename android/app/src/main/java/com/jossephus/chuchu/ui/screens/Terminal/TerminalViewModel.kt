@@ -6,11 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.jossephus.chuchu.R
-import com.jossephus.chuchu.data.db.AppDatabase
-import com.jossephus.chuchu.data.repository.HostRepository
-import com.jossephus.chuchu.data.repository.SettingsRepository
-import com.jossephus.chuchu.data.repository.SshKeyRepository
-import com.jossephus.chuchu.model.HostProfile
 import com.jossephus.chuchu.model.Transport
 import com.jossephus.chuchu.service.multiplexer.MultiplexerRegistry
 import com.jossephus.chuchu.service.multiplexer.RemoteMultiplexerSession
@@ -56,19 +51,14 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     private val app = application
     private val tailscaleStatusChecker = TailscaleStatusChecker(application)
     private val sessionRepository = TerminalSessionRepository.getInstance(application)
-    private val database = AppDatabase.getInstance(application)
-    private val hostRepository = HostRepository(database.hostProfileDao())
-    private val sshKeyRepository = SshKeyRepository(database.sshKeyDao())
-    private val settingsRepository = SettingsRepository.getInstance(application)
 
-    private sealed class PendingMultiplexerAction(open val spec: TabSpec) {
-        data class Open(override val spec: TabSpec) : PendingMultiplexerAction(spec)
-        data class Reconnect(val tabId: String, override val spec: TabSpec) : PendingMultiplexerAction(spec)
-    }
+    // Reconnecting an attached session is the only multiplexer recovery left: opening one from the
+    // terminal is gone, the server list owns it now.
+    private data class PendingMultiplexerReconnect(val tabId: String, val spec: TabSpec)
 
     private val _multiplexerState = MutableStateFlow(MultiplexerUiState())
     val multiplexerState: StateFlow<MultiplexerUiState> = _multiplexerState.asStateFlow()
-    private var pendingMultiplexerAction: PendingMultiplexerAction? = null
+    private var pendingMultiplexerReconnect: PendingMultiplexerReconnect? = null
     private var multiplexerActionGeneration = 0L
     private var multiplexerSessionListGeneration = 0L
     private var multiplexerDuplicateInFlight = false
@@ -81,11 +71,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
     val activeTab: StateFlow<TabSession?> = sessionRepository.activeTab
     val sessionState: StateFlow<SessionState> = sessionRepository.sessionState
     val hostKeyPrompt: StateFlow<HostKeyPrompt?> = sessionRepository.hostKeyPrompt
-    val hosts: StateFlow<List<HostProfile>> =
-        hostRepository.observeAll().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    val hostsLoaded: StateFlow<Boolean> =
-        hosts.map { true }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
     init {
         sessionRepository.attachClient()
     }
@@ -111,15 +96,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
             }
             .stateIn(viewModelScope, SharingStarted.Eagerly, FileBrowserUiState())
 
-    fun selectTabForHost(hostId: Long?): TabSession? {
-        val existing = sessionRepository.tabsForHost(hostId)
-        if (existing.isEmpty()) return null
-        val activeId = sessionRepository.activeTabId.value
-        val target = existing.firstOrNull { it.id == activeId } ?: existing.last()
-        sessionRepository.selectTab(target.id)
-        return target
-    }
-
     fun selectLocalShellTab(): TabSession? {
         val existing =
             sessionRepository.tabs.value.filter {
@@ -137,28 +113,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         return sessionRepository.openTab(spec)
     }
 
-    data class PreparedTabOpen(
-        val spec: TabSpec,
-        val requiresVerification: Boolean,
-    )
-
-    suspend fun prepareTabOpenForHost(hostId: Long): PreparedTabOpen? {
-        val host = hostRepository.getById(hostId) ?: return null
-        return prepareTabOpen(host)
-    }
-
-    suspend fun prepareTabOpen(host: HostProfile): PreparedTabOpen {
-        val key = host.keyId?.let { sshKeyRepository.getById(it) }
-        val spec = TabSpec.fromHostProfile(
-            host = host,
-            publicKeyOpenSsh = key?.publicKeyOpenSsh.orEmpty(),
-            privateKeyPem = key?.privateKeyPem.orEmpty(),
-        )
-        val requiresVerification =
-            settingsRepository.requireAuthOnConnect.value || host.requireAuthOnConnect
-        return PreparedTabOpen(spec = spec, requiresVerification = requiresVerification)
-    }
-
     fun duplicateActiveTab(): TabSession? {
         val current = sessionRepository.activeTab.value ?: return null
         if (current.spec.usesRuntimeMultiplexer) {
@@ -166,15 +120,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
             return null
         }
         return openTab(current.spec)
-    }
-
-    fun duplicateTab(tabId: String): TabSession? {
-        val tab = sessionRepository.tabs.value.firstOrNull { it.id == tabId } ?: return null
-        if (tab.spec.usesRuntimeMultiplexer) {
-            startMultiplexerDuplicate(tab.spec)
-            return null
-        }
-        return openTab(tab.spec)
     }
 
     private fun startMultiplexerDuplicate(spec: TabSpec) {
@@ -216,40 +161,34 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun initiateMultiplexerOpen(spec: TabSpec) {
-        beginMultiplexerAction(PendingMultiplexerAction.Open(spec))
-    }
-
     private fun initiateMultiplexerReconnect(tab: TabSession) {
-        beginMultiplexerAction(PendingMultiplexerAction.Reconnect(tab.id, tab.spec))
+        beginMultiplexerReconnect(
+            PendingMultiplexerReconnect(
+                tabId = tab.id,
+                spec = tab.spec.copy(
+                    multiplexer = tab.spec.multiplexer ?: MultiplexerRegistry.defaultType,
+                ),
+            )
+        )
     }
 
-    private fun beginMultiplexerAction(action: PendingMultiplexerAction) {
-        val preparedAction = when (action) {
-            is PendingMultiplexerAction.Open -> action.copy(
-                spec = action.spec.copy(multiplexer = action.spec.multiplexer ?: MultiplexerRegistry.defaultType),
-            )
-            is PendingMultiplexerAction.Reconnect -> action.copy(
-                spec = action.spec.copy(multiplexer = action.spec.multiplexer ?: MultiplexerRegistry.defaultType),
-            )
-        }
+    private fun beginMultiplexerReconnect(action: PendingMultiplexerReconnect) {
         if (
-            pendingMultiplexerAction == preparedAction &&
+            pendingMultiplexerReconnect == action &&
                 _multiplexerState.value.preflightLoading
         ) {
             // Keep the original generation alive while its host-key prompt is awaiting a decision.
             return
         }
         val actionGeneration = ++multiplexerActionGeneration
-        pendingMultiplexerAction = preparedAction
-        val spec = preparedAction.spec
+        pendingMultiplexerReconnect = action
+        val spec = action.spec
         val label = spec.multiplexer?.label ?: MultiplexerRegistry.defaultType.label
-        val reconnectRecovery = preparedAction is PendingMultiplexerAction.Reconnect
         if (spec.transport == Transport.Mosh) {
             _multiplexerState.value = MultiplexerUiState(
                 preflightError =
                     app.getString(R.string.terminal_error_mosh_unsupported, label),
-                reconnectRecovery = reconnectRecovery,
+                reconnectRecovery = true,
             )
             return
         }
@@ -260,29 +199,24 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
                         R.string.terminal_error_multiplexer_unsupported,
                         spec.multiplexer.label,
                     ),
-                reconnectRecovery = reconnectRecovery,
+                reconnectRecovery = true,
             )
             return
         }
         _multiplexerState.value = MultiplexerUiState(
             preflightLoading = true,
             preflightHostLabel = spec.tabLabel,
-            reconnectRecovery = reconnectRecovery,
+            reconnectRecovery = true,
         )
         viewModelScope.launch(Dispatchers.IO) {
             val result = runCatching {
-                sessionRepository.resolveMultiplexerSessionName(
-                    spec = spec,
-                    reuseDetachedChuchuSession =
-                        preparedAction is PendingMultiplexerAction.Open &&
-                            spec.multiplexerSessionName.isNullOrBlank(),
-                )
+                sessionRepository.resolveMultiplexerSessionName(spec = spec)
             }
             withContext(Dispatchers.Main) {
-                if (!isCurrentMultiplexerAction(actionGeneration, preparedAction)) return@withContext
+                if (!isCurrentMultiplexerReconnect(actionGeneration, action)) return@withContext
                 result.fold(
                     onSuccess = { sessionName ->
-                        completeMultiplexerAction(actionGeneration, preparedAction, sessionName)
+                        completeMultiplexerReconnect(actionGeneration, action, sessionName)
                     },
                     onFailure = { error ->
                         _multiplexerState.value = _multiplexerState.value.copy(
@@ -298,32 +232,30 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    private fun isCurrentMultiplexerAction(actionGeneration: Long, action: PendingMultiplexerAction): Boolean =
-        multiplexerActionGeneration == actionGeneration && pendingMultiplexerAction == action
-
-    private fun completeMultiplexerAction(
+    private fun isCurrentMultiplexerReconnect(
         actionGeneration: Long,
-        action: PendingMultiplexerAction,
+        action: PendingMultiplexerReconnect,
+    ): Boolean =
+        multiplexerActionGeneration == actionGeneration && pendingMultiplexerReconnect == action
+
+    private fun completeMultiplexerReconnect(
+        actionGeneration: Long,
+        action: PendingMultiplexerReconnect,
         sessionName: String,
     ) {
-        if (!isCurrentMultiplexerAction(actionGeneration, action)) return
+        if (!isCurrentMultiplexerReconnect(actionGeneration, action)) return
         val nextSpec = action.spec.copy(
             multiplexer = action.spec.multiplexer ?: MultiplexerRegistry.defaultType,
             multiplexerSessionName = sessionName,
             multiplexerCreateIfMissing = action.spec.multiplexerCreateIfMissing,
         )
-        pendingMultiplexerAction = null
+        pendingMultiplexerReconnect = null
         _multiplexerState.value = MultiplexerUiState()
-        when (action) {
-            is PendingMultiplexerAction.Open -> openTab(nextSpec)
-            is PendingMultiplexerAction.Reconnect -> {
-                if (!reconnectTabWithSpec(action.tabId, nextSpec)) {
-                    _multiplexerState.value = MultiplexerUiState(
-                        preflightError = app.getString(R.string.terminal_error_session_gone),
-                        reconnectRecovery = true,
-                    )
-                }
-            }
+        if (!reconnectTabWithSpec(action.tabId, nextSpec)) {
+            _multiplexerState.value = MultiplexerUiState(
+                preflightError = app.getString(R.string.terminal_error_session_gone),
+                reconnectRecovery = true,
+            )
         }
     }
 
@@ -427,36 +359,15 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         sessionRepository.switchActiveMultiplexerSession(name)
     }
 
-    fun retryPendingMultiplexerOpen() {
-        val action = pendingMultiplexerAction ?: return
-        beginMultiplexerAction(action)
+    fun retryPendingMultiplexerReconnect() {
+        val action = pendingMultiplexerReconnect ?: return
+        beginMultiplexerReconnect(action)
     }
 
-    fun connectPendingWithoutMultiplexer(): Boolean {
-        val action = pendingMultiplexerAction ?: return false
-        val plainSpec = action.spec.copy(
-            multiplexer = null,
-            multiplexerSessionName = null,
-            multiplexerCreateIfMissing = true,
-        )
+    fun dismissMultiplexerRecovery() {
         _multiplexerState.value = MultiplexerUiState()
-        pendingMultiplexerAction = null
+        pendingMultiplexerReconnect = null
         multiplexerActionGeneration += 1
-        return when (action) {
-            is PendingMultiplexerAction.Open -> {
-                openTab(plainSpec)
-                true
-            }
-            is PendingMultiplexerAction.Reconnect -> reconnectTabWithSpec(action.tabId, plainSpec)
-        }
-    }
-
-    fun dismissMultiplexerRecovery(onBack: () -> Unit) {
-        val shouldNavigateBack = pendingMultiplexerAction is PendingMultiplexerAction.Open
-        _multiplexerState.value = MultiplexerUiState()
-        pendingMultiplexerAction = null
-        multiplexerActionGeneration += 1
-        if (shouldNavigateBack) onBack()
     }
 
     fun selectTab(id: String) {

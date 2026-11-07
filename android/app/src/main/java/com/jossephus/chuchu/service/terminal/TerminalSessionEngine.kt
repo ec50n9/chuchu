@@ -540,7 +540,11 @@ class TerminalSessionEngine(
             }
             val result = runMultiplexerCommand(spec.toConnectionParams(), multiplexer.listSessionsCommand())
             if (!result.isSuccess) {
-                throw IllegalStateException(result.stderr.ifBlank { "Failed to list ${type.label} sessions" })
+                // The command reports *why* on stdout ("tmux executable not found"), so surface
+                // the whole output instead of a generic failure.
+                throw IllegalStateException(
+                    result.output.ifBlank { "Failed to list ${type.label} sessions" },
+                )
             }
             multiplexer.parseSessions(result.stdout)
         }
@@ -697,11 +701,23 @@ class TerminalSessionEngine(
                             )
                     }
                 }
-                when (readLoopExitAction(transport)) {
+                // Only the SSH channel can tell "the program exited" from "the link died".
+                val sessionEnded =
+                    !disconnectRequested &&
+                        transport != Transport.Mosh &&
+                        transport != Transport.LocalShell &&
+                        nativeSsh.isChannelEof()
+                when (readLoopExitAction(transport, sessionEnded)) {
                     ReadLoopExitAction.Disconnect -> {
                         localShellService.close()
-                        if (!disconnectRequested && !failed) {
-                            _state.value = _state.value.copy(status = SessionStatus.Disconnected)
+                        // An exception raised on the way out of an already-EOF channel is still a
+                        // finished session, not a failure worth showing.
+                        if (!disconnectRequested && (sessionEnded || !failed)) {
+                            _state.value =
+                                _state.value.copy(
+                                    status = SessionStatus.Disconnected,
+                                    error = null,
+                                )
                         }
                     }
                     ReadLoopExitAction.RequireManualReconnect -> {
@@ -729,6 +745,10 @@ class TerminalSessionEngine(
                 break
             }
             if (chunk.isEmpty()) {
+                // The remote program exited (`exit`, `tmux kill-session`, ...): the channel is at
+                // EOF and will never produce another byte, so waiting here would sit on a session
+                // that is already over and report it as connected forever.
+                if (nativeSsh.isChannelEof()) break
                 // Adaptive poll: stay snappy while data is flowing, back off when
                 // idle so a quiet session doesn't spin at 500 wakeups/sec.
                 delay(idleReadDelayMs(System.currentTimeMillis() - lastActivityMs))

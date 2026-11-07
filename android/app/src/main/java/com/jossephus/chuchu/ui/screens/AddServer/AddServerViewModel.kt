@@ -91,6 +91,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                         requireAuthOnConnect = profile.requireAuthOnConnect,
                         postConnectCommand = profile.postConnectCommand.orEmpty(),
                         multiplexer = profile.multiplexer,
+                        autoConnect = profile.autoConnect,
                     )
             }
         }
@@ -187,18 +188,25 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
         _form.value = _form.value.copy(requireAuthOnConnect = enabled)
     }
 
+    fun updateAutoConnect(enabled: Boolean) {
+        _form.value = _form.value.copy(autoConnect = enabled)
+    }
+
     fun updatePostConnectCommand(command: String) {
         _form.value = _form.value.copy(postConnectCommand = command)
     }
 
     fun updateMultiplexer(multiplexer: MultiplexerType?) {
         val current = _form.value
+        val selected = multiplexer?.takeIf {
+            current.transport != Transport.Mosh && it.runtimeSupported
+        }
         _form.value =
             current.copy(
-                multiplexer =
-                    multiplexer?.takeIf {
-                        current.transport != Transport.Mosh && it.runtimeSupported
-                    }
+                multiplexer = selected,
+                // Auto-connect has nothing to link without a multiplexer, and the switch is
+                // hidden then, so drop it rather than keep an invisible true.
+                autoConnect = current.autoConnect && selected != null,
             )
     }
 
@@ -306,6 +314,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                         current.multiplexer.takeIf {
                             current.transport != Transport.Mosh && it?.runtimeSupported == true
                         },
+                    autoConnect = current.autoConnect && current.multiplexer != null,
                 )
             hostRepository.upsert(profile)
             onComplete()
@@ -329,6 +338,7 @@ data class AddServerForm(
     val requireAuthOnConnect: Boolean = false,
     val postConnectCommand: String = "",
     val multiplexer: MultiplexerType? = null,
+    val autoConnect: Boolean = false,
 )
 
 fun AddServerForm.canSave(): Boolean {

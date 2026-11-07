@@ -3,7 +3,6 @@ package com.jossephus.chuchu.data.repository
 import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.jossephus.chuchu.ui.screens.Terminal.TerminalTabMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -49,7 +48,6 @@ class SettingsRepositoryTest {
         assertEquals(SettingsRepository.DEFAULT_LIGHT_THEME, repo.lightThemeName.first())
         assertEquals(SettingsRepository.DEFAULT_THEME_MODE, repo.themeMode.first())
         assertEquals(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE, repo.terminalFontSize.first())
-        assertEquals(TerminalTabMode.Classic, repo.terminalTabMode.first())
         assertEquals(false, repo.appLockEnabled.first())
         assertEquals(true, repo.localShellEnabled.first())
         assertEquals(true, repo.showCustomActionsFab.first())
@@ -62,7 +60,6 @@ class SettingsRepositoryTest {
 
         repo.setTheme("Dracula")
         repo.setLightTheme("Nord Light")
-        repo.setTerminalTabMode(TerminalTabMode.Strip)
         repo.setAppLockEnabled(true)
         repo.setLocalShellEnabled(false)
 
@@ -71,7 +68,6 @@ class SettingsRepositoryTest {
 
         assertEquals("Dracula", reloaded.themeName.first())
         assertEquals("Nord Light", reloaded.lightThemeName.first())
-        assertEquals(TerminalTabMode.Strip, reloaded.terminalTabMode.first())
         assertEquals(true, reloaded.appLockEnabled.first())
         assertEquals(false, reloaded.localShellEnabled.first())
     }
@@ -110,12 +106,10 @@ class SettingsRepositoryTest {
         clearPrefs()
         context.getSharedPreferences("chuchu_settings", Context.MODE_PRIVATE)
             .edit()
-            .putString("terminal_tab_mode", "NOT_A_REAL_MODE")
             .putString("theme_mode", "NOT_A_REAL_MODE")
             .commit()
 
         val repo = newRepository()
-        assertEquals(TerminalTabMode.Classic, repo.terminalTabMode.first())
         assertEquals(SettingsRepository.DEFAULT_THEME_MODE, repo.themeMode.first())
     }
 }

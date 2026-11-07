@@ -11,6 +11,7 @@ import com.jossephus.chuchu.service.multiplexer.RemoteMultiplexerSession
 import com.jossephus.chuchu.service.ssh.HostKeyStore
 import com.jossephus.chuchu.service.ssh.TailscaleStatusChecker
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 
 import kotlinx.coroutines.CancellationException
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -124,6 +126,13 @@ class TerminalSessionRepository private constructor(application: Application) {
     private var attachedClients = 0
     private var foregroundServiceRunning = false
     private var foregroundNotificationLabel: String? = null
+    // Ids of multiplexer sessions this app currently has attached. A session that just became
+    // attached exists on the remote only now, so the host's list has to be re-read then — a probe
+    // fired when the connection was requested would still see the old list.
+    private var attachedMultiplexerTabIds: Set<String> = emptySet()
+    // Tabs that have been live at least once. A session that reaches Disconnected is over, but a
+    // tab is born in that state (before its connect call lands), so only a tab that was live counts.
+    private val liveTabIds = mutableSetOf<String>()
 
     init {
         scope.launch {
@@ -138,6 +147,25 @@ class TerminalSessionRepository private constructor(application: Application) {
                     }
                 }
                 .collect { pairs ->
+                    val attachedNow =
+                        pairs
+                            .asSequence()
+                            .filter { (tab, state) ->
+                                tab.spec.usesRuntimeMultiplexer &&
+                                    state.status == SessionStatus.Connected
+                            }
+                            .map { (tab, _) -> tab }
+                            .toList()
+                    val justAttachedHosts =
+                        attachedNow
+                            .filter { it.id !in attachedMultiplexerTabIds }
+                            .mapNotNull { it.spec.hostId }
+                            .toSet()
+                    attachedMultiplexerTabIds = attachedNow.map { it.id }.toSet()
+                    justAttachedHosts.forEach { hostId -> refreshHost(hostId) }
+
+                    closeEndedSessions(pairs)
+
                     val anyAlive =
                         pairs.any { (_, state) ->
                             state.status == SessionStatus.Connecting ||
@@ -158,6 +186,25 @@ class TerminalSessionRepository private constructor(application: Application) {
         }
     }
 
+    /**
+     * A session whose remote program exited (`exit`, a killed multiplexer session, a finished local
+     * shell) has nothing left to show: drop it, so it does not linger as a connection to nothing.
+     * Errors are kept — those still have a message and a retry.
+     */
+    private fun closeEndedSessions(pairs: List<Pair<TabSession, SessionState>>) {
+        pairs.forEach { (tab, state) ->
+            if (state.status != SessionStatus.Disconnected) liveTabIds.add(tab.id)
+        }
+        val ended =
+            pairs
+                .filter { (tab, state) ->
+                    state.status == SessionStatus.Disconnected && liveTabIds.remove(tab.id)
+                }
+                .map { (tab, _) -> tab.id }
+        liveTabIds.retainAll(pairs.map { (tab, _) -> tab.id }.toSet())
+        ended.forEach { closeTab(it) }
+    }
+
     fun attachClient() {
         attachedClients += 1
     }
@@ -176,6 +223,73 @@ class TerminalSessionRepository private constructor(application: Application) {
 
     fun tabsForHost(hostId: Long?): List<TabSession> =
         _tabs.value.filter { it.spec.hostId == hostId }
+
+    // Multiplexer hosts the user linked, keyed by host id. A non-multiplexer host is never in
+    // here: its sessions are the tabs themselves, so there is nothing to cache.
+    private val _hostLinks = MutableStateFlow<Map<Long, HostLink>>(emptyMap())
+    val hostLinks: StateFlow<Map<Long, HostLink>> = _hostLinks.asStateFlow()
+    private val hostSpecs = ConcurrentHashMap<Long, TabSpec>()
+
+    /**
+     * Links a host so its multiplexer sessions can be listed, and returns the session tab when the
+     * host has no multiplexer (there, connecting and having a session are the same act).
+     */
+    fun connectHost(spec: TabSpec): TabSession? {
+        val hostId = spec.hostId ?: return null
+        if (!spec.usesRuntimeMultiplexer) return openTab(spec)
+        hostSpecs[hostId] = spec
+        _hostLinks.update { links ->
+            links + (hostId to HostLink(status = HostLinkStatus.Connecting))
+        }
+        launchHostSessionList(hostId, spec)
+        return null
+    }
+
+    fun refreshHost(hostId: Long) {
+        val spec = hostSpecs[hostId] ?: return
+        if (!spec.usesRuntimeMultiplexer) return
+        // A probe already in flight wins; concurrent listings would just race each other.
+        if (_hostLinks.value[hostId]?.status == HostLinkStatus.Connecting) return
+        _hostLinks.update { links ->
+            // Keep the last known list visible while refreshing; only the probe result replaces it.
+            val previous = links[hostId]
+            links +
+                (hostId to
+                    HostLink(
+                        status = HostLinkStatus.Connecting,
+                        remoteSessions = previous?.remoteSessions.orEmpty(),
+                    ))
+        }
+        launchHostSessionList(hostId, spec)
+    }
+
+    fun disconnectHost(hostId: Long) {
+        tabsForHost(hostId).forEach { closeTab(it.id) }
+        hostSpecs.remove(hostId)
+        _hostLinks.update { links -> links - hostId }
+    }
+
+    private fun launchHostSessionList(hostId: Long, spec: TabSpec) {
+        scope.launch {
+            val listed = runCatching { listMultiplexerSessions(spec) }
+            _hostLinks.update { links ->
+                // A disconnect during the probe must win over its late answer.
+                if (!hostSpecs.containsKey(hostId)) return@update links
+                links + (
+                    hostId to
+                        listed.fold(
+                            onSuccess = { HostLink(HostLinkStatus.Online, it) },
+                            onFailure = { error ->
+                                HostLink(
+                                    status = HostLinkStatus.Error,
+                                    error = error.message ?: "Failed to list sessions",
+                                )
+                            },
+                        )
+                )
+            }
+        }
+    }
 
     fun openMultiplexerSessionNamesForHost(
         hostId: Long?,

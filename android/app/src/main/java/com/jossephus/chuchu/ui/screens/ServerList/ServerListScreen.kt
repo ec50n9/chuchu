@@ -19,10 +19,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -45,7 +45,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -55,6 +54,7 @@ import kotlinx.coroutines.launch
 import com.jossephus.chuchu.R
 import com.jossephus.chuchu.model.HostProfile
 import com.jossephus.chuchu.model.Transport
+import com.jossephus.chuchu.service.terminal.HostKeyPrompt
 import com.jossephus.chuchu.service.terminal.TabSession
 import com.jossephus.chuchu.service.terminal.TerminalSessionRepository
 import com.jossephus.chuchu.ui.screens.Terminal.statusDotColor
@@ -63,6 +63,8 @@ import com.jossephus.chuchu.ui.components.ChuButton
 import com.jossephus.chuchu.ui.components.ChuButtonVariant
 import com.jossephus.chuchu.ui.components.ChuCard
 import com.jossephus.chuchu.ui.components.ChuDialog
+import com.jossephus.chuchu.ui.components.HostKeyPromptDialog
+import com.jossephus.chuchu.ui.components.KeepImeClosed
 import com.jossephus.chuchu.ui.components.ChuText
 import com.jossephus.chuchu.ui.components.ChuTextField
 import com.jossephus.chuchu.ui.components.TuiBadge
@@ -72,6 +74,9 @@ import com.jossephus.chuchu.ui.theme.ChuTypography
 @Composable
 fun ServerListScreen(
     hosts: List<HostProfile>,
+    hostRuntime: Map<Long, HostRuntime>,
+    hostKeyPrompt: HostKeyPrompt?,
+    onHostKeyDecision: (Boolean) -> Unit,
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     onAddServer: () -> Unit,
@@ -79,7 +84,10 @@ fun ServerListScreen(
     onOpenLocalShell: () -> Unit,
     onEditServer: (Long) -> Unit,
     onConnectServer: (Long) -> Unit,
-    onOpenSession: (Long) -> Unit,
+    onOpenSession: (Long, SessionRow) -> Unit,
+    onNewSession: (Long) -> Unit,
+    onRefreshSessions: (Long) -> Unit,
+    onDisconnectServer: (Long) -> Unit,
     onDeleteServer: (Long) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -108,6 +116,8 @@ fun ServerListScreen(
             hostId != null -> onConnectServer(hostId)
         }
     }
+    // A session that ends leaves the terminal's keyboard behind; this screen has nothing to type into.
+    KeepImeClosed()
     LaunchedEffect(hosts, selectedHostId) {
         val selected_id = selectedHostId
         if (selected_id != null && hosts.none { it.id == selected_id }) {
@@ -224,19 +234,20 @@ fun ServerListScreen(
                     }
                 } else {
                     items(hosts, key = { it.id }) { host ->
-                        val isConnected = host.id in connectedHostIds
-                        val hostSessions = openTabs.filter { it.spec.hostId == host.id }
+                        val runtime = hostRuntime[host.id] ?: HostRuntime()
+                        // A linked multiplexer host is connected even with no session attached:
+                        // the link is what makes its session list visible.
+                        val isConnected = host.id in connectedHostIds || runtime.linked
                         val disconnectBeforeDeleteMessage =
                             stringResource(R.string.server_list_disconnect_before_delete)
                         HostCard(
                             host = host,
                             isConnected = isConnected,
-                            sessions = hostSessions,
-                            onOpenSession = { tabId ->
-                                selectedHostId = null
-                                sessionRepo.selectTab(tabId)
-                                onOpenSession(host.id)
-                            },
+                            runtime = runtime,
+                            openTabs = openTabs,
+                            onOpenSession = { row -> onOpenSession(host.id, row) },
+                            onNewSession = { onNewSession(host.id) },
+                            onRefreshSessions = { onRefreshSessions(host.id) },
                             isSelected = selectedHostId == host.id,
                             onLongPress = { selectedHostId = host.id },
                             onCancelSelection = { selectedHostId = null },
@@ -297,27 +308,42 @@ fun ServerListScreen(
                 dismissLabel = stringResource(R.string.dialog_dismiss),
                 onConfirm = {
                     selectedHostId = null
-                    openTabs
-                        .asSequence()
-                        .filter { it.spec.hostId == pendingDisconnectHost.id }
-                        .map { it.id }
-                        .toList()
-                        .forEach(sessionRepo::closeTab)
+                    onDisconnectServer(pendingDisconnectHost.id)
                     pendingDisconnectHostId = null
                 },
                 onDismiss = { pendingDisconnectHostId = null },
             ) {
                 ChuText(
-                    pluralStringResource(
-                        R.plurals.server_list_disconnect_body,
-                        sessionCount,
-                        sessionCount,
-                    ),
+                    when {
+                        // Nothing attached: the link is the only thing going away.
+                        sessionCount == 0 -> stringResource(R.string.server_list_disconnect_body_idle)
+                        // A multiplexer session outlives its client, so this only detaches.
+                        pendingDisconnectHost.multiplexer != null ->
+                            pluralStringResource(
+                                R.plurals.server_list_disconnect_body_detach,
+                                sessionCount,
+                                sessionCount,
+                            )
+                        // A bare SSH session *is* the connection: closing it ends the shell.
+                        else ->
+                            pluralStringResource(
+                                R.plurals.server_list_disconnect_body_end,
+                                sessionCount,
+                                sessionCount,
+                            )
+                    },
                     style = typography.body,
                     color = colors.warning,
                 )
             }
         }
+
+        // A link probe verifies the host key just like a session does.
+        HostKeyPromptDialog(
+            prompt = hostKeyPrompt,
+            onAccept = { onHostKeyDecision(true) },
+            onReject = { onHostKeyDecision(false) },
+        )
     }
 }
 
@@ -432,8 +458,11 @@ private fun LocalShellCard(
 private fun HostCard(
     host: HostProfile,
     isConnected: Boolean,
-    sessions: List<TabSession>,
-    onOpenSession: (String) -> Unit,
+    runtime: HostRuntime,
+    openTabs: List<TabSession>,
+    onOpenSession: (SessionRow) -> Unit,
+    onNewSession: () -> Unit,
+    onRefreshSessions: () -> Unit,
     isSelected: Boolean,
     onLongPress: () -> Unit,
     onCancelSelection: () -> Unit,
@@ -449,6 +478,8 @@ private fun HostCard(
     val maxSwipePx = with(density) { 132.dp.toPx() }
     val disconnectThresholdPx = with(density) { 72.dp.toPx() }
     val swipeOffsetX = remember(host.id) { Animatable(0f) }
+    // Tapping the card body folds the session list; it never connects and never enters a session.
+    var sessionsExpanded by remember(host.id) { mutableStateOf(true) }
     val hostLabel = "> ${host.username}@${host.host}:${host.port}"
 
     LaunchedEffect(isConnected) {
@@ -547,9 +578,8 @@ private fun HostCard(
                 ChuCard(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 114.dp)
                         .combinedClickable(
-                            onClick = onConnect,
+                            onClick = { sessionsExpanded = !sessionsExpanded },
                             onLongClick = onLongPress,
                         ),
                     background = colors.surfaceVariant,
@@ -648,14 +678,62 @@ private fun HostCard(
                             }
                         }
 
-                        // Open sessions of this host: one tap jumps straight to that tab.
-                        if (sessions.isNotEmpty()) {
+                        // Sessions of this host: one tap opens (attaching first when the session
+                        // lives in a remote multiplexer).
+                        if (runtime.linked && sessionsExpanded) {
                             Spacer(modifier = Modifier.height(4.dp))
-                            sessions.forEach { session ->
+                            runtime.rows.forEach { row ->
                                 HostSessionRow(
-                                    tab = session,
-                                    onClick = { onOpenSession(session.id) },
+                                    row = row,
+                                    tab = openTabs.firstOrNull { it.id == row.localSessionId },
+                                    onClick = { onOpenSession(row) },
                                 )
+                            }
+                            if (runtime.loading) {
+                                HostSessionRowPlaceholder(stringResource(R.string.session_listing))
+                            } else if (runtime.rows.isEmpty() && runtime.error == null) {
+                                HostSessionRowPlaceholder(stringResource(R.string.session_none))
+                            }
+                            runtime.error?.let { message ->
+                                ChuText(
+                                    message,
+                                    style = typography.labelSmall,
+                                    color = colors.error,
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (host.multiplexer != null) {
+                                    ChuButton(
+                                        onClick = onRefreshSessions,
+                                        variant = ChuButtonVariant.Ghost,
+                                        bracketed = true,
+                                        borderColor = colors.textMuted,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    ) {
+                                        ChuText(
+                                            stringResource(R.string.mux_refresh),
+                                            style = typography.labelSmall,
+                                            color = colors.textMuted,
+                                        )
+                                    }
+                                }
+                                ChuButton(
+                                    onClick = onNewSession,
+                                    variant = ChuButtonVariant.Ghost,
+                                    bracketed = true,
+                                    borderColor = colors.accent,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                ) {
+                                    ChuText(
+                                        stringResource(R.string.session_new),
+                                        style = typography.labelSmall,
+                                        color = colors.accent,
+                                    )
+                                }
                             }
                         }
                     }
@@ -666,11 +744,35 @@ private fun HostCard(
 }
 
 @Composable
-private fun HostSessionRow(tab: TabSession, onClick: () -> Unit) {
+private fun HostSessionRowPlaceholder(label: String) {
     val colors = ChuColors.current
     val typography = ChuTypography.current
-    val state by tab.sessionState.collectAsStateWithLifecycle()
-    val label = state.title?.takeIf { it.isNotBlank() } ?: terminalTabDisplayLabel(tab)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ChuText("└", style = typography.labelSmall, color = colors.textMuted)
+        ChuText(label, style = typography.body, color = colors.textMuted)
+    }
+}
+
+@Composable
+private fun HostSessionRow(row: SessionRow, tab: TabSession?, onClick: () -> Unit) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    val state =
+        if (tab == null) {
+            null
+        } else {
+            val collected by tab.sessionState.collectAsStateWithLifecycle()
+            collected
+        }
+    val label =
+        row.remoteName
+            ?: state?.title?.takeIf { it.isNotBlank() }
+            ?: tab?.let { terminalTabDisplayLabel(it) }
+            ?: row.key
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -680,7 +782,11 @@ private fun HostSessionRow(tab: TabSession, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ChuText("└", style = typography.labelSmall, color = colors.textMuted)
-        ChuText("●", style = typography.labelSmall, color = statusDotColor(state.status, colors))
+        ChuText(
+            "●",
+            style = typography.labelSmall,
+            color = state?.let { statusDotColor(it.status, colors) } ?: colors.textMuted,
+        )
         ChuText(
             label,
             style = typography.body,
@@ -689,5 +795,12 @@ private fun HostSessionRow(tab: TabSession, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        if (row.attachedElsewhere) {
+            ChuText(
+                stringResource(R.string.mux_attached),
+                style = typography.labelSmall,
+                color = colors.textMuted,
+            )
+        }
     }
 }

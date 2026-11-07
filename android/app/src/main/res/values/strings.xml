@@ -67,10 +67,15 @@
     <string name="server_list_disconnect_before_delete">Disconnect before deleting this host</string>
     <string name="server_list_add_server">+ add server</string>
     <string name="server_list_disconnect_title">Disconnect %1$s?</string>
-    <plurals name="server_list_disconnect_body">
-        <item quantity="one">This closes %1$d session on this host.</item>
-        <item quantity="other">This closes %1$d sessions on this host.</item>
+    <plurals name="server_list_disconnect_body_detach">
+        <item quantity="one">This disconnects %1$d session. It keeps running on the host.</item>
+        <item quantity="other">This disconnects %1$d sessions. They keep running on the host.</item>
     </plurals>
+    <plurals name="server_list_disconnect_body_end">
+        <item quantity="one">This closes %1$d session. Its shell ends with it.</item>
+        <item quantity="other">This closes %1$d sessions. Their shells end with them.</item>
+    </plurals>
+    <string name="server_list_disconnect_body_idle">This stops listing this host\'s sessions.</string>
     <string name="server_list_empty_title"># no hosts configured</string>
     <string name="server_list_empty_hint">add your first host to connect quickly.</string>
     <string name="server_list_local_shell">local shell</string>
@@ -92,6 +97,7 @@
     <string name="add_server_set_passphrase">set passphrase</string>
     <string name="add_server_additional_settings">additional settings</string>
     <string name="add_server_require_biometric">require biometric auth</string>
+    <string name="add_server_auto_connect">connect when the app opens</string>
     <string name="add_server_test_idle">test connection</string>
     <string name="add_server_test_running">testing…</string>
     <string name="add_server_test_success">connected</string>
@@ -202,23 +208,13 @@
     <string name="verification_unlock_title">Unlock Chuchu</string>
     <string name="verification_unlock_subtitle">Authenticate to continue</string>
 
-    <!-- Tabs -->
-    <string name="tabs_header">tabs</string>
+    <!-- Sessions -->
+    <string name="tabs_header">sessions</string>
     <string name="tab_new">+ new</string>
-    <string name="tabs_all">all tabs</string>
-    <string name="tabs_new_connection">new connection</string>
-    <string name="tabs_new_connection_row">+ new connection</string>
-    <string name="tabs_empty">no terminal sessions</string>
-    <string name="tabs_duplicate">dup</string>
-    <string name="tabs_state_active">active</string>
-    <string name="tabs_state_inactive">inactive</string>
-    <string name="tabs_cd_close_manager">close tab manager</string>
-    <string name="tabs_cd_duplicate">duplicate %1$s</string>
-    <string name="tabs_cd_close">close %1$s</string>
-    <plurals name="tabs_session_count">
-        <item quantity="one">%1$d session</item>
-        <item quantity="other">%1$d sessions</item>
-    </plurals>
+    <string name="session_new">+ new session</string>
+    <string name="session_listing">listing sessions…</string>
+    <string name="session_ended">session ended</string>
+    <string name="session_none">no sessions yet</string>
     <string name="action_close">close</string>
     <string name="session_status_connected">connected</string>
     <string name="session_status_connecting">connecting</string>
@@ -227,16 +223,16 @@
     <string name="session_status_error">error</string>
 
     <!-- Builtin chuchu commands -->
-    <string name="builtin_tabs_label">tabs</string>
-    <string name="builtin_tabs_description">show tab manager</string>
-    <string name="builtin_new_tab_label">new tab</string>
-    <string name="builtin_new_tab_description">open a new tab</string>
+    <string name="builtin_tabs_label">sessions</string>
+    <string name="builtin_tabs_description">show the session switcher</string>
+    <string name="builtin_new_tab_label">new session</string>
+    <string name="builtin_new_tab_description">open a new session on this host</string>
     <string name="builtin_actions_label">actions</string>
     <string name="builtin_actions_description">toggle floating custom actions button</string>
     <string name="builtin_settings_label">settings</string>
     <string name="builtin_settings_description">open settings</string>
     <string name="builtin_close_label">close</string>
-    <string name="builtin_close_description">close the active tab</string>
+    <string name="builtin_close_description">close the active session</string>
 
     <!-- Multiplexer session panel -->
     <string name="mux_sessions">multiplexer sessions</string>
@@ -246,9 +242,6 @@
     <string name="mux_attach">attach</string>
 
     <!-- Terminal session -->
-    <string name="terminal_new_session_on">new session on %1$s</string>
-    <string name="terminal_current_host">current host</string>
-    <string name="terminal_key_passphrase">Key passphrase</string>
     <string name="terminal_files_unsupported">Files are not supported for local shell</string>
     <string name="terminal_connection_failed">Connection failed</string>
     <string name="terminal_hostkey_title">Verify host key</string>
@@ -279,7 +272,6 @@
     <string name="terminal_reconnecting_to">Reconnecting to%1$s…</string>
     <string name="terminal_preparing">Preparing terminal…</string>
     <string name="terminal_retry_multiplexer">retry multiplexer</string>
-    <string name="terminal_connect_without_mux">connect without multiplexer</string>
     <string name="terminal_file_progress">file %1$d of %2$d</string>
     <string name="terminal_error_create_mux">Could not create multiplexer session</string>
     <string name="terminal_error_prepare_mux">Could not prepare multiplexer session</string>
@@ -288,7 +280,6 @@
     <string name="terminal_unknown_server">server</string>
     <string name="terminal_reconnecting">Reconnecting</string>
     <string name="terminal_reconnecting_attempt">Reconnecting (%1$d)</string>
-    <string name="terminal_endpoint_local_shell">this device · app sandbox</string>
     <string name="terminal_error_mosh_unsupported">%1$s is not supported for Mosh connections</string>
     <string name="terminal_error_multiplexer_unsupported">%1$s is not supported yet</string>
     <string name="terminal_error_session_gone">Terminal session is no longer available</string>
@@ -363,9 +354,6 @@
     <string name="settings_font_header">FONT</string>
     <string name="settings_terminal_header">TERMINAL</string>
     <string name="settings_font_size">font size</string>
-    <string name="settings_tab_interface">tab interface</string>
-    <string name="settings_tab_mode_palette">palette</string>
-    <string name="settings_tab_mode_strip">tab strip</string>
     <string name="settings_accessory_keys">accessory keys</string>
     <string name="settings_no_keys_enabled">no keys enabled</string>
     <plurals name="settings_keys_enabled">

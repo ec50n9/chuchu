@@ -25,4 +25,8 @@ data class HostProfile(
     val postConnectCommand: String? = null,
     @ColumnInfo(defaultValue = "NULL")
     val multiplexer: MultiplexerType? = null,
+    // Connect this host (and list its multiplexer sessions) when the server list opens.
+    // Only meaningful with a multiplexer: a bare SSH host has no "connected but idle" state.
+    @ColumnInfo(defaultValue = "0")
+    val autoConnect: Boolean = false,
 )

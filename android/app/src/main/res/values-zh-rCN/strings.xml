@@ -65,9 +65,13 @@
     <string name="server_list_disconnect_before_delete">请先断开连接，再删除此主机</string>
     <string name="server_list_add_server">+ 添加主机</string>
     <string name="server_list_disconnect_title">断开 %1$s？</string>
-    <plurals name="server_list_disconnect_body">
-        <item quantity="other">将关闭此主机上的 %1$d 个会话。</item>
+    <plurals name="server_list_disconnect_body_detach">
+        <item quantity="other">将断开 %1$d 个已附着的会话，会话仍在该主机上继续运行。</item>
     </plurals>
+    <plurals name="server_list_disconnect_body_end">
+        <item quantity="other">将关闭 %1$d 个会话，其中的 Shell 也随之结束。</item>
+    </plurals>
+    <string name="server_list_disconnect_body_idle">将不再列出该主机的会话。</string>
     <string name="server_list_empty_title"># 尚未配置主机</string>
     <string name="server_list_empty_hint">添加第一个主机即可快速连接。</string>
     <string name="server_list_local_shell">本地 Shell</string>
@@ -89,6 +93,7 @@
     <string name="add_server_set_passphrase">设置口令</string>
     <string name="add_server_additional_settings">更多设置</string>
     <string name="add_server_require_biometric">连接前需要生物识别</string>
+    <string name="add_server_auto_connect">打开 App 时自动连接</string>
     <string name="add_server_test_idle">测试连接</string>
     <string name="add_server_test_running">测试中…</string>
     <string name="add_server_test_success">已连接</string>
@@ -194,21 +199,12 @@
     <string name="verification_unlock_subtitle">验证身份以继续</string>
 
     <!-- Tabs -->
-    <string name="tabs_header">标签页</string>
+    <string name="tabs_header">会话</string>
+    <string name="session_new">+ 新建会话</string>
+    <string name="session_listing">正在列出会话…</string>
+    <string name="session_ended">会话已结束</string>
+    <string name="session_none">还没有会话</string>
     <string name="tab_new">+ 新建</string>
-    <string name="tabs_all">全部标签页</string>
-    <string name="tabs_new_connection">新建连接</string>
-    <string name="tabs_new_connection_row">+ 新建连接</string>
-    <string name="tabs_empty">没有终端会话</string>
-    <string name="tabs_duplicate">复制</string>
-    <string name="tabs_state_active">当前</string>
-    <string name="tabs_state_inactive">非当前</string>
-    <string name="tabs_cd_close_manager">关闭标签页管理</string>
-    <string name="tabs_cd_duplicate">复制 %1$s</string>
-    <string name="tabs_cd_close">关闭 %1$s</string>
-    <plurals name="tabs_session_count">
-        <item quantity="other">%1$d 个会话</item>
-    </plurals>
     <string name="action_close">关闭</string>
     <string name="session_status_connected">已连接</string>
     <string name="session_status_connecting">连接中</string>
@@ -236,9 +232,6 @@
     <string name="mux_attach">挂载</string>
 
     <!-- Terminal session -->
-    <string name="terminal_new_session_on">在 %1$s 上新建会话</string>
-    <string name="terminal_current_host">当前主机</string>
-    <string name="terminal_key_passphrase">密钥口令</string>
     <string name="terminal_files_unsupported">本地 Shell 不支持文件管理</string>
     <string name="terminal_connection_failed">连接失败</string>
     <string name="terminal_hostkey_title">验证主机密钥</string>
@@ -268,7 +261,6 @@
     <string name="terminal_reconnecting_to">正在重连到%1$s…</string>
     <string name="terminal_preparing">正在准备终端…</string>
     <string name="terminal_retry_multiplexer">重试多路复用</string>
-    <string name="terminal_connect_without_mux">不使用多路复用直接连接</string>
     <string name="terminal_file_progress">第 %1$d / %2$d 个文件</string>
     <string name="terminal_error_create_mux">无法创建多路复用会话</string>
     <string name="terminal_error_prepare_mux">无法准备多路复用会话</string>
@@ -277,7 +269,6 @@
     <string name="terminal_unknown_server">服务器</string>
     <string name="terminal_reconnecting">正在重连</string>
     <string name="terminal_reconnecting_attempt">正在重连（第 %1$d 次）</string>
-    <string name="terminal_endpoint_local_shell">本机 · 应用沙盒</string>
     <string name="terminal_error_mosh_unsupported">%1$s 不支持 Mosh 连接</string>
     <string name="terminal_error_multiplexer_unsupported">%1$s 尚未支持</string>
     <string name="terminal_error_session_gone">终端会话已失效</string>
@@ -347,9 +338,6 @@
     <string name="settings_font_header">字体</string>
     <string name="settings_terminal_header">终端</string>
     <string name="settings_font_size">字号</string>
-    <string name="settings_tab_interface">标签页样式</string>
-    <string name="settings_tab_mode_palette">命令面板</string>
-    <string name="settings_tab_mode_strip">顶部标签条</string>
     <string name="settings_accessory_keys">辅助键</string>
     <string name="settings_no_keys_enabled">未启用任何按键</string>
     <plurals name="settings_keys_enabled">

@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
@@ -27,15 +26,12 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import com.jossephus.chuchu.R
-import com.jossephus.chuchu.ui.screens.Terminal.TerminalTabMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
@@ -43,22 +39,16 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
 import com.jossephus.chuchu.data.repository.SettingsRepository
 import com.jossephus.chuchu.ui.components.ChuButton
 import com.jossephus.chuchu.ui.components.ChuButtonVariant
@@ -92,8 +82,6 @@ internal fun TerminalSettings(
     onShowCustomActionsFabChanged: (Boolean) -> Unit,
     builtinShortcuts: Map<String, String> = emptyMap(),
     onEditChuchuCommands: () -> Unit = {},
-    currentTabMode: TerminalTabMode = TerminalTabMode.Classic,
-    onTabModeChanged: (TerminalTabMode) -> Unit = {},
     localShellEnabled: Boolean = false,
     onLocalShellEnabledChanged: (Boolean) -> Unit = {},
     keepScreenAwake: Boolean = false,
@@ -111,9 +99,6 @@ internal fun TerminalSettings(
 ) {
     val colors = ChuColors.current
     val typography = ChuTypography.current
-    var tabModeExpanded by remember { mutableStateOf(false) }
-    var tabModeAnchorBounds by remember { mutableStateOf<Rect?>(null) }
-    var tabModeContainerBounds by remember { mutableStateOf<Rect?>(null) }
     val selectedEntries = remember(currentAccessoryLayoutIds) {
         TerminalAccessoryLayoutStore.resolveSelectedLayout(currentAccessoryLayoutIds)
     }
@@ -129,9 +114,6 @@ internal fun TerminalSettings(
 
     Column(
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.onGloballyPositioned { coordinates ->
-            tabModeContainerBounds = coordinates.boundsInWindow()
-        },
     ) {
         // Font size selector
         ChuCard(modifier = Modifier.fillMaxWidth()) {
@@ -200,102 +182,6 @@ internal fun TerminalSettings(
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                         ) {
                             ChuText("+", style = typography.label)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Tab interface selector
-        ChuCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ChuText(stringResource(R.string.settings_tab_interface), style = typography.label)
-                    Box(contentAlignment = Alignment.TopEnd) {
-                        ChuButton(
-                            onClick = { tabModeExpanded = !tabModeExpanded },
-                            variant = ChuButtonVariant.Outlined,
-                            bracketed = true,
-                            modifier = Modifier.onGloballyPositioned { coordinates ->
-                                tabModeAnchorBounds = coordinates.boundsInWindow()
-                            },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                ChuText(
-                                    tabModeLabel(currentTabMode),
-                                    style = typography.label,
-                                    color = colors.textPrimary,
-                                )
-                                ChuText(
-                                    if (tabModeExpanded) "▲" else "▼",
-                                    style = typography.labelSmall,
-                                    color = colors.textMuted,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (tabModeExpanded) {
-            val anchorBounds = tabModeAnchorBounds
-            val containerBounds = tabModeContainerBounds
-            if (anchorBounds != null && containerBounds != null) {
-                Popup(
-                    alignment = Alignment.TopStart,
-                    offset = with(density) {
-                        IntOffset(
-                            x = (anchorBounds.left - containerBounds.left).roundToInt(),
-                            y = (anchorBounds.bottom - containerBounds.top).roundToInt() + 2.dp.roundToPx(),
-                        )
-                    },
-                    onDismissRequest = { tabModeExpanded = false },
-                    properties = PopupProperties(focusable = true),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .widthIn(min = with(density) { anchorBounds.width.toDp() })
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(colors.surface)
-                            .border(1.dp, colors.border.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-                            .padding(vertical = 6.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        TerminalTabMode.entries.forEach { mode ->
-                            val isSelected = mode == currentTabMode
-                            Row(
-                                modifier = Modifier
-                                    .clickable {
-                                        onTabModeChanged(mode)
-                                        tabModeExpanded = false
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                ChuText(
-                                    if (isSelected) "✓" else " ",
-                                    style = typography.label,
-                                    color = if (isSelected) colors.textPrimary else colors.textMuted,
-                                )
-                                ChuText(
-                                    tabModeLabel(mode),
-                                    style = typography.label,
-                                    color = colors.textPrimary,
-                                )
-                            }
                         }
                     }
                 }
@@ -856,11 +742,6 @@ internal fun ChuchuCommandsEditorSheet(
     }
 }
 
-@Composable
-private fun tabModeLabel(mode: TerminalTabMode): String = when (mode) {
-    TerminalTabMode.Classic -> stringResource(R.string.settings_tab_mode_palette)
-    TerminalTabMode.Strip -> stringResource(R.string.settings_tab_mode_strip)
-}
 
 
 
