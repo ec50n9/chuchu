@@ -207,6 +207,8 @@ class TerminalSessionRepository private constructor(application: Application) {
 
     fun attachClient() {
         attachedClients += 1
+        // Frames are dropped while nothing watches, so the screen needs one now.
+        activeTab.value?.engine?.repaintNow()
     }
 
     fun detachClient() {
@@ -362,6 +364,8 @@ class TerminalSessionRepository private constructor(application: Application) {
                 onHostKeyVerificationRequired = { prompt, keyBytes ->
                     verification = PreflightHostKeyVerification(prompt, keyBytes)
                 },
+                // Nothing renders a probe: listing sessions only needs the command output.
+                hasAttachedClient = { false },
             )
         preflightEngine = engine
         return try {
@@ -408,6 +412,7 @@ class TerminalSessionRepository private constructor(application: Application) {
                 hostKeyStore,
                 tailscaleStatusChecker,
                 holdRepaintFrames = { settingsRepository.holdRepaintFrames.value },
+                hasAttachedClient = { attachedClients > 0 },
             )
         val tab = TabSession(id, spec, engine)
         _tabs.value = _tabs.value + tab
@@ -433,9 +438,9 @@ class TerminalSessionRepository private constructor(application: Application) {
     }
 
     fun selectTab(id: String) {
-        if (_tabs.value.any { it.id == id }) {
-            _activeTabId.value = id
-        }
+        val tab = _tabs.value.firstOrNull { it.id == id } ?: return
+        _activeTabId.value = id
+        tab.engine.repaintNow()
     }
 
     fun closeTab(id: String) {
