@@ -5,7 +5,7 @@ import io.github.ec50n9.roost.model.SshKey
 class Ed25519KeyGenerator(private val bridge: NativeSshBridge = NativeSshBridge()) {
     fun generate(name: String, passphrase: String = ""): SshKey {
         val normalizedName = name.trim().ifBlank { "android-ed25519" }
-        val comment = "$normalizedName@chuchu"
+        val comment = "$normalizedName@roost"
         val effectivePassphrase = passphrase.ifBlank { null }
 
         val result = bridge.nativeGenerateEd25519Key(comment, effectivePassphrase)

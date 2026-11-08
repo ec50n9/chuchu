@@ -162,7 +162,7 @@ fun ServerListScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     ChuText("$ ", style = typography.headline, color = colors.textMuted)
-                    ChuText("chuchu", style = typography.headline)
+                    ChuText("roost", style = typography.headline)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -44,10 +44,10 @@ See the roadmap in the repo's local planning notes.
 
 ## Getting Started
 
-Download the APK from [releases](https://github.com/ec50n9/chuchu/releases).
+Download the APK from [releases](https://github.com/ec50n9/roost/releases).
 
 - **Stable:** the latest non-prerelease build
-- **Nightly:** every push to `main` publishes a rolling prerelease at the [`nightly`](https://github.com/ec50n9/chuchu/releases/tag/nightly) tag
+- **Nightly:** every push to `main` publishes a rolling prerelease at the [`nightly`](https://github.com/ec50n9/roost/releases/tag/nightly) tag
 
 ## How Roost differs from upstream
 

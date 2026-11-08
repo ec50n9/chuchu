@@ -14,7 +14,7 @@ class RsaKeyGenerator {
         generator.initialize(bits)
         val pair = generator.generateKeyPair()
         val privatePem = encodePrivateKeyPem(pair.private.encoded)
-        val publicOpenSsh = encodeRsaPublicKeyOpenSsh(pair.public as RSAPublicKey, "$normalizedName@chuchu")
+        val publicOpenSsh = encodeRsaPublicKeyOpenSsh(pair.public as RSAPublicKey, "$normalizedName@roost")
         return SshKey(
             name = normalizedName,
             privateKeyPem = privatePem,

@@ -11,6 +11,8 @@ that shape every change here:
 - Do not add opt-in switches to stay mergeable with upstream. Change the default behavior.
 - Keep the `chuchu-backup` file extension and the `libchuchu_jni` library name: they are
   internal identifiers, renaming them only breaks existing backups and JNI bindings.
+  The same goes for the `chuchu.db` database name, the `chuchu_settings` preferences name and the
+  `CHUCHU_EXIT` / `CHUCHU_TERM_OK` shell protocol markers — none of them are user visible.
 
 ## Zig Development
 
