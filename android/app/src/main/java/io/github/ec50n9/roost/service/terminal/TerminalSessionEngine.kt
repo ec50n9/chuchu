@@ -939,7 +939,7 @@ class TerminalSessionEngine(
         nativeSsh.close()
         moshService.close()
         localShellService.close()
-        handle = bridge.nativeCreate(cols, rows, 1000)
+        handle = bridge.nativeCreate(cols, rows, SCROLLBACK_LINES)
         applyTerminalOptions()
 
         when (params.transport) {
@@ -1379,6 +1379,11 @@ class TerminalSessionEngine(
 
     private companion object {
         // Idle thresholds and the poll delay for each tier.
+        // Lines of history kept per session. 2000 rows is roughly 2.5 MB of cells, which is what a
+        // phone can hold for a few sessions at once; the snapshot only carries the viewport, so this
+        // does not make painting more expensive.
+        private const val SCROLLBACK_LINES = 2000
+
         private const val ACTIVE_WINDOW_MS = 50L
         private const val NEAR_IDLE_WINDOW_MS = 500L
         private const val IDLE_WINDOW_MS = 3_000L

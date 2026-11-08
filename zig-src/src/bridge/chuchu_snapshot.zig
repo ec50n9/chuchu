@@ -483,7 +483,9 @@ fn kittyTempDir() []const u8 {
     return "/tmp";
 }
 
-export fn chuchu_create_terminal(cols: c.jint, rows: c.jint, max_scrollback: c.jint) callconv(.c) c.jlong {
+// `max_scrollback_lines` is a line count, not bytes: ghostty's byte limit defaults to 10 KB, which
+// on an 80-column terminal is about a dozen rows, so a byte budget here silently disables scrollback.
+export fn chuchu_create_terminal(cols: c.jint, rows: c.jint, max_scrollback_lines: c.jint) callconv(.c) c.jlong {
     ghostty.sys.decode_png = chuchuDecodePng;
 
     const io = jni_io.get();
@@ -495,7 +497,9 @@ export fn chuchu_create_terminal(cols: c.jint, rows: c.jint, max_scrollback: c.j
     var inner = ghostty.Terminal.init(io, allocator, .{
         .cols = init_cols,
         .rows = init_rows,
-        .max_scrollback_bytes = @intCast(clampI32(max_scrollback, 0, 10000)),
+        // Bytes stays unset so the line limit is the one that applies.
+        .max_scrollback_bytes = null,
+        .max_scrollback_lines = @intCast(clampI32(max_scrollback_lines, 0, 100_000)),
         .kitty_image_storage_limit = 64 * 1024 * 1024,
         .kitty_image_loading_limits = .{
             .file = false,
@@ -573,10 +577,10 @@ export fn Java_io_github_ec50n9_roost_service_terminal_GhosttyBridge_nativeVersi
     return jniNewStringUTF(env, "1");
 }
 
-export fn Java_io_github_ec50n9_roost_service_terminal_GhosttyBridge_nativeCreate(env: *c.JNIEnv, thiz: c.jobject, cols: c.jint, rows: c.jint, max_scrollback: c.jint) callconv(.c) c.jlong {
+export fn Java_io_github_ec50n9_roost_service_terminal_GhosttyBridge_nativeCreate(env: *c.JNIEnv, thiz: c.jobject, cols: c.jint, rows: c.jint, max_scrollback_lines: c.jint) callconv(.c) c.jlong {
     _ = env;
     _ = thiz;
-    return chuchu_create_terminal(cols, rows, max_scrollback);
+    return chuchu_create_terminal(cols, rows, max_scrollback_lines);
 }
 
 export fn Java_io_github_ec50n9_roost_service_terminal_GhosttyBridge_nativeDestroy(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {
