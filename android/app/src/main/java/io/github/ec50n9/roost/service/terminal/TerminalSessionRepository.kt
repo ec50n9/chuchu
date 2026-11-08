@@ -123,6 +123,8 @@ class TerminalSessionRepository private constructor(application: Application) {
             }
             .stateIn(scope, SharingStarted.Eagerly, emptySet())
 
+    // Tabs that were resumed from parked: attaching them again is not a first attach.
+    private val resumedTabIds = ConcurrentHashMap.newKeySet<String>()
     private var attachedClients = 0
     private var foregroundServiceRunning = false
     private var foregroundNotificationLabel: String? = null
@@ -158,7 +160,9 @@ class TerminalSessionRepository private constructor(application: Application) {
                             .toList()
                     val justAttachedHosts =
                         attachedNow
-                            .filter { it.id !in attachedMultiplexerTabIds }
+                            .filter { tab ->
+                                tab.id !in attachedMultiplexerTabIds && resumedTabIds.remove(tab.id) == false
+                            }
                             .mapNotNull { it.spec.hostId }
                             .toSet()
                     attachedMultiplexerTabIds = attachedNow.map { it.id }.toSet()
@@ -193,12 +197,13 @@ class TerminalSessionRepository private constructor(application: Application) {
      */
     private fun closeEndedSessions(pairs: List<Pair<TabSession, SessionState>>) {
         pairs.forEach { (tab, state) ->
-            if (state.status != SessionStatus.Disconnected) liveTabIds.add(tab.id)
+            // A parked session is deliberately disconnected; that is not the session ending.
+            if (tab.parked || state.status != SessionStatus.Disconnected) liveTabIds.add(tab.id)
         }
         val ended =
             pairs
                 .filter { (tab, state) ->
-                    state.status == SessionStatus.Disconnected && liveTabIds.remove(tab.id)
+                    !tab.parked && state.status == SessionStatus.Disconnected && liveTabIds.remove(tab.id)
                 }
                 .map { (tab, _) -> tab.id }
         liveTabIds.retainAll(pairs.map { (tab, _) -> tab.id }.toSet())
@@ -207,12 +212,42 @@ class TerminalSessionRepository private constructor(application: Application) {
 
     fun attachClient() {
         attachedClients += 1
-        // Frames are dropped while nothing watches, so the screen needs one now.
-        activeTab.value?.engine?.repaintNow()
+        activeTab.value?.let(::watchTab)
     }
 
     fun detachClient() {
         attachedClients = (attachedClients - 1).coerceAtLeast(0)
+        if (attachedClients == 0) parkUnwatchedSessions()
+    }
+
+    /**
+     * Nothing is rendering these sessions any more, and a multiplexer session does not need the app
+     * to hold a connection to stay alive — the server keeps it running. So drop the local connection
+     * instead of quietly reading a stream nobody sees. Bare SSH, mosh and local shells are the
+     * process itself, so they stay connected.
+     */
+    private fun parkUnwatchedSessions() {
+        _tabs.value
+            .filter { tab -> tab.spec.usesRuntimeMultiplexer && !tab.parked }
+            .forEach { tab ->
+                tab.parked = true
+                tab.engine.disconnect()
+            }
+    }
+
+    /** Paint what is already there, or re-attach a parked session, when a screen starts watching. */
+    private fun watchTab(tab: TabSession) {
+        if (tab.parked) {
+            tab.parked = false
+            // A resumed session already exists remotely, so re-reading the host's session list (the
+            // first-attach rule below) would only spend a round trip competing with this re-attach.
+            resumedTabIds.add(tab.id)
+            // The session lives on the server, so this only has to re-open the connection to it.
+            reconnectTab(tab)
+        } else {
+            // Frames are dropped while nothing watches, so the screen needs one now.
+            tab.engine.repaintNow()
+        }
     }
 
     private fun currentNotificationLabel(): String {
@@ -440,7 +475,7 @@ class TerminalSessionRepository private constructor(application: Application) {
     fun selectTab(id: String) {
         val tab = _tabs.value.firstOrNull { it.id == id } ?: return
         _activeTabId.value = id
-        tab.engine.repaintNow()
+        watchTab(tab)
     }
 
     fun closeTab(id: String) {
