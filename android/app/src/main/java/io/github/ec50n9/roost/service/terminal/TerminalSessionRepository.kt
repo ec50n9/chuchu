@@ -293,7 +293,8 @@ class TerminalSessionRepository private constructor(application: Application) {
     /**
      * Links a host, which is what makes its card show as connected. Both kinds of host get a link;
      * only the work behind it differs: a multiplexer host reads the remote session list, a bare SSH
-     * host has no list, so it is the connectivity check itself.
+     * host has no list, so it is the connectivity check itself. Only a probe that answers writes
+     * `linked`, so a host that never answered is not restored on the next launch.
      */
     fun connectHost(spec: TabSpec) {
         val hostId = spec.hostId ?: return
@@ -301,9 +302,6 @@ class TerminalSessionRepository private constructor(application: Application) {
         _hostLinks.update { links ->
             links + (hostId to HostLink(status = HostLinkStatus.Connecting))
         }
-        // The link is what the user asked to keep watching, so it survives the app and is restored
-        // on the next launch. Bounded by disconnectHost, which forgets it again.
-        setLinked(hostId, true)
         launchHostProbe(hostId, spec)
     }
 
@@ -356,8 +354,11 @@ class TerminalSessionRepository private constructor(application: Application) {
     private fun launchHostCheck(hostId: Long, spec: TabSpec) {
         scope.launch {
             val checked = runCatching { verifyHostConnection(spec) }
+            // A disconnect during the check must win over its late answer, so the row is only
+            // touched while the link still exists.
+            val write = linkWriteAfterProbe(checked.isSuccess)
+            if (write != null && hostSpecs.containsKey(hostId)) setLinked(hostId, write)
             _hostLinks.update { links ->
-                // A disconnect during the check must win over its late answer.
                 if (!hostSpecs.containsKey(hostId)) return@update links
                 links + (
                     hostId to
@@ -385,8 +386,11 @@ class TerminalSessionRepository private constructor(application: Application) {
     private fun launchHostSessionList(hostId: Long, spec: TabSpec) {
         scope.launch {
             val listed = runCatching { listMultiplexerSessions(spec) }
+            // Only a link that answered is worth restoring (see linkWriteAfterProbe), and a
+            // disconnect during the probe keeps the last word on the stored flag.
+            val write = linkWriteAfterProbe(listed.isSuccess)
+            if (write != null && hostSpecs.containsKey(hostId)) setLinked(hostId, write)
             _hostLinks.update { links ->
-                // A disconnect during the probe must win over its late answer.
                 if (!hostSpecs.containsKey(hostId)) return@update links
                 links + (
                     hostId to

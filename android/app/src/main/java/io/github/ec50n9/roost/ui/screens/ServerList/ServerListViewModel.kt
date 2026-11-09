@@ -17,6 +17,7 @@ import io.github.ec50n9.roost.service.terminal.HostKeyPrompt
 import io.github.ec50n9.roost.service.terminal.TabSession
 import io.github.ec50n9.roost.service.terminal.TabSpec
 import io.github.ec50n9.roost.service.terminal.TerminalSessionRepository
+import io.github.ec50n9.roost.ui.screens.Terminal.hostIndicator
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -61,17 +62,25 @@ class ServerListViewModel(
     val hostRuntime: StateFlow<Map<Long, HostRuntime>> =
         combine(
             hostRepository.observeAll(),
-            sessionRepository.hostLinks,
-            sessionRepository.tabs,
+            // Links, attachments and tabs change independently but are read together; folding them
+            // into one value keeps the combine under the 5-argument typed overload.
+            combine(sessionRepository.hostLinks, sessionRepository.connectedHostIds, sessionRepository.tabs) {
+                    links,
+                    attached,
+                    tabs,
+                ->
+                LinkSnapshot(links, attached, tabs)
+            },
             hostNotices,
             creatingHostIds,
-        ) { hosts, links, tabs, notices, creating ->
+        ) { hosts, linkSnapshot, notices, creating ->
             hosts.associate { host ->
                 host.id to
                     runtimeFor(
                         host = host,
-                        link = links[host.id],
-                        hostTabs = tabs.filter { it.spec.hostId == host.id },
+                        link = linkSnapshot.links[host.id],
+                        attached = host.id in linkSnapshot.attached,
+                        hostTabs = linkSnapshot.tabs.filter { it.spec.hostId == host.id },
                         notice = notices[host.id],
                         creating = creating.contains(host.id),
                     )
@@ -114,6 +123,9 @@ class ServerListViewModel(
     fun deleteServer(id: Long) {
         viewModelScope.launch {
             val host = hostRepository.getById(id) ?: return@launch
+            // A deleted host must not stay in the repository's link map: refreshSessionLists walks
+            // it, so a leftover entry means probing a host that no longer exists on every return.
+            sessionRepository.disconnectHost(id)
             hostRepository.delete(host)
         }
     }
@@ -226,16 +238,15 @@ class ServerListViewModel(
     private fun runtimeFor(
         host: HostProfile,
         link: HostLink?,
+        attached: Boolean,
         hostTabs: List<TabSession>,
         notice: HostNotice?,
         creating: Boolean,
     ): HostRuntime {
-        val status = link?.status ?: HostLinkStatus.Offline
+        val status = link?.status
         val linkError = link?.error?.takeIf { status == HostLinkStatus.Error }
         return HostRuntime(
-            linked = status != HostLinkStatus.Offline,
-            online = status == HostLinkStatus.Online,
-            loading = status == HostLinkStatus.Connecting,
+            indicator = hostIndicator(status, attached),
             creating = creating,
             message = notice?.message ?: linkError,
             messageIsError = notice?.isError ?: (linkError != null),
@@ -270,6 +281,12 @@ class ServerListViewModel(
     }
 
     private data class HostNotice(val message: String, val isError: Boolean)
+
+    private data class LinkSnapshot(
+        val links: Map<Long, HostLink>,
+        val attached: Set<Long>,
+        val tabs: List<TabSession>,
+    )
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =

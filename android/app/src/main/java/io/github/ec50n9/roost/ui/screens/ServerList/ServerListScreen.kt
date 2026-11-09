@@ -106,7 +106,6 @@ fun ServerListScreen(
     val context = LocalContext.current
     val application = context.applicationContext as Application
     val sessionRepo = remember(application) { TerminalSessionRepository.getInstance(application) }
-    val connectedHostIds by sessionRepo.connectedHostIds.collectAsStateWithLifecycle()
     val openTabs by sessionRepo.tabs.collectAsStateWithLifecycle()
     val hasOpenLocalShell = openTabs.any { it.spec.transport == Transport.LocalShell }
 
@@ -263,14 +262,10 @@ fun ServerListScreen(
                 } else {
                     items(hosts, key = { it.id }) { host ->
                         val runtime = hostRuntime[host.id] ?: HostRuntime()
-                        // A linked multiplexer host is connected even with no session attached:
-                        // the link is what makes its session list visible.
-                        val isConnected = host.id in connectedHostIds || runtime.linked
                         val disconnectBeforeDeleteMessage =
                             stringResource(R.string.server_list_disconnect_before_delete)
                         HostCard(
                             host = host,
-                            isConnected = isConnected,
                             showAddress = host.name in duplicateNames,
                             runtime = runtime,
                             openTabs = openTabs,
@@ -281,7 +276,7 @@ fun ServerListScreen(
                             onLongPress = { selectedHostId = host.id },
                             onCancelSelection = { selectedHostId = null },
                             onDeleteSelection = {
-                                if (isConnected) {
+                                if (runtime.indicator == SessionIndicator.Connected) {
                                     Toast.makeText(
                                         context,
                                         disconnectBeforeDeleteMessage,
@@ -391,6 +386,19 @@ fun ServerListScreen(
         )
     }
 }
+
+/** What a screen reader hears for the host dot; the dot itself is colour only. */
+@Composable
+private fun hostIndicatorText(indicator: SessionIndicator): String =
+    stringResource(
+        when (indicator) {
+            SessionIndicator.Connected -> R.string.session_status_connected
+            SessionIndicator.Connecting -> R.string.session_status_connecting
+            SessionIndicator.Error -> R.string.session_status_error
+            SessionIndicator.Detached,
+            SessionIndicator.Inactive -> R.string.session_status_disconnected
+        }
+    )
 
 @Composable
 private fun SectionHeader(label: String) {
@@ -502,7 +510,6 @@ private fun LocalShellCard(
 @Composable
 private fun HostCard(
     host: HostProfile,
-    isConnected: Boolean,
     showAddress: Boolean,
     runtime: HostRuntime,
     openTabs: List<TabSession>,
@@ -524,6 +531,11 @@ private fun HostCard(
     val maxSwipePx = with(density) { 132.dp.toPx() }
     val disconnectThresholdPx = with(density) { 72.dp.toPx() }
     val swipeOffsetX = remember(host.id) { Animatable(0f) }
+    // Only a host that answered can be disconnected: connecting has nothing to tear down yet, and
+    // a failed check left no link behind.
+    val isConnected = runtime.indicator == SessionIndicator.Connected
+    val isConnecting = runtime.indicator == SessionIndicator.Connecting
+    val dotDescription = hostIndicatorText(runtime.indicator)
     // Tapping the card body folds the session list; it never connects and never enters a session.
     var sessionsExpanded by remember(host.id) { mutableStateOf(true) }
 
@@ -645,9 +657,13 @@ private fun HostCard(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 ChuText(
-                                    if (isConnected) "● " else "○ ",
+                                    statusDotSymbol(runtime.indicator) + " ",
                                     style = typography.title,
-                                    color = if (isConnected) colors.success else colors.textMuted,
+                                    color = statusDotColor(runtime.indicator, colors),
+                                    modifier =
+                                        Modifier.semantics {
+                                            contentDescription = dotDescription
+                                        },
                                 )
                                 ChuText(
                                     host.name,
@@ -676,6 +692,7 @@ private fun HostCard(
                                     onClick = {
                                         if (isConnected) onDisconnect() else onConnect()
                                     },
+                                    enabled = !isConnecting,
                                     variant = ChuButtonVariant.Outlined,
                                     bracketed = true,
                                     borderColor = if (isConnected) colors.warning else colors.accentSecondary,
@@ -729,7 +746,7 @@ private fun HostCard(
 
                         // Sessions of this host: one tap opens (attaching first when the session
                         // lives in a remote multiplexer).
-                        if (runtime.linked && sessionsExpanded) {
+                        if (runtime.indicator != SessionIndicator.Inactive && sessionsExpanded) {
                             Spacer(modifier = Modifier.height(4.dp))
                             runtime.rows.forEach { row ->
                                 HostSessionRow(
@@ -740,9 +757,8 @@ private fun HostCard(
                             }
                             if (runtime.creating) {
                                 HostSessionRowPlaceholder(stringResource(R.string.session_creating))
-                            } else if (runtime.loading) {
-                                HostSessionRowPlaceholder(stringResource(R.string.session_listing))
-                            } else if (runtime.rows.isEmpty() && runtime.message == null) {
+                            } else if (runtime.rows.isEmpty() && runtime.message == null && !isConnecting) {
+                                // While connecting there is nothing to say yet; the dot carries it.
                                 HostSessionRowPlaceholder(stringResource(R.string.session_none))
                             }
                             runtime.message?.let { message ->
@@ -772,10 +788,9 @@ private fun HostCard(
                                         color = colors.textMuted,
                                     )
                                 }
-                                // Only a host that answered can take a session. A refresh in
-                                // flight keeps the button: hiding it on every re-probe made it
-                                // blink on each return to this screen.
-                                if (runtime.online || runtime.loading) {
+                                // A failed link hides it: nothing answered to create against. A
+                                // probe in flight keeps it, otherwise it blinks on every refresh.
+                                if (runtime.indicator != SessionIndicator.Error) {
                                     ChuButton(
                                         onClick = onNewSession,
                                         variant = ChuButtonVariant.Ghost,

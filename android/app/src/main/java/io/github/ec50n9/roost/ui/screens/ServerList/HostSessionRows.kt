@@ -1,6 +1,7 @@
 package io.github.ec50n9.roost.ui.screens.ServerList
 
 import io.github.ec50n9.roost.service.multiplexer.RemoteMultiplexerSession
+import io.github.ec50n9.roost.ui.screens.Terminal.SessionIndicator
 
 /**
  * One row under a host card.
@@ -16,11 +17,11 @@ data class SessionRow(
 )
 
 data class HostRuntime(
-    /** The link exists (or is being made): the card is connected and can be disconnected. */
-    val linked: Boolean = false,
-    /** The probe came back: only then is there anything to create a session against. */
-    val online: Boolean = false,
-    val loading: Boolean = false,
+    /**
+     * The host's own state in the same vocabulary as the dots under it. Drives the dot, the card
+     * border and the connect button; `Inactive` is the only state with no link behind it.
+     */
+    val indicator: SessionIndicator = SessionIndicator.Inactive,
     /** A "+ new session" for this host is still resolving its name over SSH. */
     val creating: Boolean = false,
     /** One line under the card: a check result, or why the last action failed. */

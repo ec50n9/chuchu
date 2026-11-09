@@ -2,6 +2,8 @@ package io.github.ec50n9.roost.ui.screens.ServerList
 
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -10,6 +12,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import io.github.ec50n9.roost.model.HostProfile
 import io.github.ec50n9.roost.model.MultiplexerType
 import io.github.ec50n9.roost.model.Transport
+import io.github.ec50n9.roost.ui.screens.Terminal.SessionIndicator
 import io.github.ec50n9.roost.ui.theme.ChuTheme
 import io.github.ec50n9.roost.ui.theme.GhosttyThemeRegistry
 import org.junit.Rule
@@ -74,9 +77,13 @@ class ServerListScreenTest {
     @Test
     fun aBareHostOnlyOffersANewSessionOnceItsCheckCameBack() {
         val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
-        render(hosts = listOf(bare), runtime = mapOf(1L to HostRuntime(linked = true, online = true)))
+        render(
+            hosts = listOf(bare),
+            runtime = mapOf(1L to HostRuntime(indicator = SessionIndicator.Connected)),
+        )
 
         composeRule.onNodeWithText("+ new session").assertIsDisplayed()
+        composeRule.onNodeWithText("disconnect").assertIsDisplayed()
     }
 
     @Test
@@ -88,7 +95,7 @@ class ServerListScreenTest {
                 mapOf(
                     1L to
                         HostRuntime(
-                            linked = true,
+                            indicator = SessionIndicator.Error,
                             message = "Connection refused",
                             messageIsError = true,
                         )
@@ -97,6 +104,9 @@ class ServerListScreenTest {
 
         composeRule.onNodeWithText("Connection refused").assertIsDisplayed()
         composeRule.onNodeWithText("+ new session").assertDoesNotExist()
+        // A failed check leaves no link to tear down, so the button goes back to "connect".
+        composeRule.onNodeWithText("disconnect").assertDoesNotExist()
+        composeRule.onNodeWithText("connect").assertIsEnabled()
     }
 
     @Test
@@ -104,10 +114,26 @@ class ServerListScreenTest {
         val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
         render(
             hosts = listOf(bare),
-            runtime = mapOf(1L to HostRuntime(linked = true, loading = true)),
+            runtime = mapOf(1L to HostRuntime(indicator = SessionIndicator.Connecting)),
         )
 
         composeRule.onNodeWithText("+ new session").assertIsDisplayed()
+    }
+
+    @Test
+    fun connectingDisablesTheButtonAndClaimsNoSessionCount() {
+        val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
+        render(
+            hosts = listOf(bare),
+            runtime = mapOf(1L to HostRuntime(indicator = SessionIndicator.Connecting)),
+        )
+
+        // The dot carries the state, so the button must not pretend the link exists or can be
+        // taken back: a blocking libssh2 connect ignores cancellation, so "cancel" would be a lie.
+        composeRule.onNodeWithText("connect").assertIsNotEnabled()
+        composeRule.onNodeWithText("disconnect").assertDoesNotExist()
+        // Nothing is known yet, so the card must not claim there are no sessions.
+        composeRule.onNodeWithText("no sessions yet").assertDoesNotExist()
     }
 
     @Test

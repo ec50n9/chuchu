@@ -212,7 +212,6 @@
     <string name="tabs_header">sessions</string>
     <string name="tab_new">+ new</string>
     <string name="session_new">+ new session</string>
-    <string name="session_listing">connecting…</string>
     <string name="session_creating">creating session…</string>
     <string name="session_ended">session ended</string>
     <string name="session_none">no sessions yet</string>
