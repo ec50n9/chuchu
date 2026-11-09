@@ -318,7 +318,7 @@ class TerminalSessionRepository private constructor(application: Application) {
      *
      * A bare host has no list to go stale, and re-checking it here would authenticate against it
      * again on every return to the server list, serialized behind the preflight mutex. Its card
-     * still has "refresh" as the retry path.
+     * covers the retry itself: "refresh" while it answers, "connect" after a failed check.
      */
     fun refreshSessionLists() {
         hostSpecs.forEach { (hostId, spec) ->

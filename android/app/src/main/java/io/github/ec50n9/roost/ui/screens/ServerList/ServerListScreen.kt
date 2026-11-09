@@ -769,28 +769,27 @@ private fun HostCard(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 )
                             }
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                // Re-probing is the retry path, so it stays available on a host
-                                // whose last probe failed.
-                                ChuButton(
-                                    onClick = onRefreshSessions,
-                                    variant = ChuButtonVariant.Ghost,
-                                    bracketed = true,
-                                    borderColor = colors.textMuted,
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            // Both actions need a host that answered: while connecting there is
+                            // nothing to list or create yet, and after a failed check the card's
+                            // connect button is the retry.
+                            if (isConnected) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    ChuText(
-                                        stringResource(R.string.mux_refresh),
-                                        style = typography.labelSmall,
-                                        color = colors.textMuted,
-                                    )
-                                }
-                                // A failed link hides it: nothing answered to create against. A
-                                // probe in flight keeps it, otherwise it blinks on every refresh.
-                                if (runtime.indicator != SessionIndicator.Error) {
+                                    ChuButton(
+                                        onClick = onRefreshSessions,
+                                        variant = ChuButtonVariant.Ghost,
+                                        bracketed = true,
+                                        borderColor = colors.textMuted,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    ) {
+                                        ChuText(
+                                            stringResource(R.string.mux_refresh),
+                                            style = typography.labelSmall,
+                                            color = colors.textMuted,
+                                        )
+                                    }
                                     ChuButton(
                                         onClick = onNewSession,
                                         variant = ChuButtonVariant.Ghost,

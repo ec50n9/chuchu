@@ -103,21 +103,26 @@ class ServerListScreenTest {
         )
 
         composeRule.onNodeWithText("Connection refused").assertIsDisplayed()
+        // Nothing answered, so there is nothing to list or create against. "connect" is the retry.
         composeRule.onNodeWithText("+ new session").assertDoesNotExist()
+        composeRule.onNodeWithText("refresh").assertDoesNotExist()
         // A failed check leaves no link to tear down, so the button goes back to "connect".
         composeRule.onNodeWithText("disconnect").assertDoesNotExist()
         composeRule.onNodeWithText("connect").assertIsEnabled()
     }
 
     @Test
-    fun aRefreshInFlightKeepsTheNewSessionButton() {
+    fun aConnectingHostOffersNoSessionActions() {
         val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
         render(
             hosts = listOf(bare),
             runtime = mapOf(1L to HostRuntime(indicator = SessionIndicator.Connecting)),
         )
 
-        composeRule.onNodeWithText("+ new session").assertIsDisplayed()
+        // A probe in flight is not a link yet: listing again would be queued behind it and creating
+        // would start a second handshake. Both blink in when the dot turns green.
+        composeRule.onNodeWithText("+ new session").assertDoesNotExist()
+        composeRule.onNodeWithText("refresh").assertDoesNotExist()
     }
 
     @Test
