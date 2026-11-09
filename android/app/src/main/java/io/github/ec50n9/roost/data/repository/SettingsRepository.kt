@@ -49,6 +49,10 @@ class SettingsRepository(context: Context) {
     private val _requireAuthOnConnect = MutableStateFlow(prefs.getBoolean(KEY_REQUIRE_AUTH_ON_CONNECT, false))
     val requireAuthOnConnect: StateFlow<Boolean> = _requireAuthOnConnect.asStateFlow()
 
+    private val _confirmBeforeDisconnect =
+        MutableStateFlow(prefs.getBoolean(KEY_CONFIRM_BEFORE_DISCONNECT, true))
+    val confirmBeforeDisconnect: StateFlow<Boolean> = _confirmBeforeDisconnect.asStateFlow()
+
     private val _localShellEnabled = MutableStateFlow(prefs.getBoolean(KEY_LOCAL_SHELL_ENABLED, true))
     val localShellEnabled: StateFlow<Boolean> = _localShellEnabled.asStateFlow()
 
@@ -131,6 +135,11 @@ class SettingsRepository(context: Context) {
     fun setRequireAuthOnConnect(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_REQUIRE_AUTH_ON_CONNECT, enabled).apply()
         _requireAuthOnConnect.value = enabled
+    }
+
+    fun setConfirmBeforeDisconnect(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONFIRM_BEFORE_DISCONNECT, enabled).apply()
+        _confirmBeforeDisconnect.value = enabled
     }
 
     fun setLocalShellEnabled(enabled: Boolean) {
@@ -228,6 +237,7 @@ class SettingsRepository(context: Context) {
         private const val KEY_ACCESSORY_BAR_SINGLE_ROW = "terminal_accessory_bar_single_row"
         private const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         private const val KEY_REQUIRE_AUTH_ON_CONNECT = "require_auth_on_connect"
+        private const val KEY_CONFIRM_BEFORE_DISCONNECT = "confirm_before_disconnect"
         private const val KEY_LOCAL_SHELL_ENABLED = "local_shell_enabled"
         private const val KEY_KEEP_SCREEN_AWAKE = "keep_screen_awake"
         private const val KEY_HIDE_SCREEN_CONTENTS = "hide_screen_contents"

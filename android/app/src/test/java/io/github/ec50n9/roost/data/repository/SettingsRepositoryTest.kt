@@ -49,6 +49,7 @@ class SettingsRepositoryTest {
         assertEquals(SettingsRepository.DEFAULT_THEME_MODE, repo.themeMode.first())
         assertEquals(SettingsRepository.DEFAULT_TERMINAL_FONT_SIZE, repo.terminalFontSize.first())
         assertEquals(false, repo.appLockEnabled.first())
+        assertEquals(true, repo.confirmBeforeDisconnect.first())
         assertEquals(true, repo.localShellEnabled.first())
         assertEquals(true, repo.showCustomActionsFab.first())
     }
@@ -61,6 +62,7 @@ class SettingsRepositoryTest {
         repo.setTheme("Dracula")
         repo.setLightTheme("Nord Light")
         repo.setAppLockEnabled(true)
+        repo.setConfirmBeforeDisconnect(false)
         repo.setLocalShellEnabled(false)
 
         // Simulate a process restart: a brand-new instance over the same pref files.
@@ -69,6 +71,7 @@ class SettingsRepositoryTest {
         assertEquals("Dracula", reloaded.themeName.first())
         assertEquals("Nord Light", reloaded.lightThemeName.first())
         assertEquals(true, reloaded.appLockEnabled.first())
+        assertEquals(false, reloaded.confirmBeforeDisconnect.first())
         assertEquals(false, reloaded.localShellEnabled.first())
     }
 

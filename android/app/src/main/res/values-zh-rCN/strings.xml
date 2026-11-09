@@ -65,6 +65,7 @@
     <string name="server_list_disconnect_before_delete">请先断开连接，再删除此主机</string>
     <string name="server_list_add_server">+ 添加主机</string>
     <string name="server_list_disconnect_title">断开 %1$s？</string>
+    <string name="server_list_disconnect_dont_ask_again">不再提示</string>
     <plurals name="server_list_disconnect_body_detach">
         <item quantity="other">将断开 %1$d 个已附着的会话，会话仍在该主机上继续运行。</item>
     </plurals>
@@ -95,9 +96,9 @@
     <string name="add_server_require_biometric">连接前需要生物识别</string>
     <string name="add_server_auto_connect">打开 App 时自动连接</string>
     <string name="add_server_test_idle">测试连接</string>
+    <string name="add_server_test_short">测试</string>
     <string name="add_server_test_running">测试中…</string>
-    <string name="add_server_test_success">已连接</string>
-    <string name="add_server_test_connected_message">已连接</string>
+    <string name="add_server_test_success">测试成功</string>
     <string name="add_server_test_error">测试失败</string>
     <string name="add_server_copy_public_key">复制公钥</string>
     <string name="add_server_new_key">新建密钥</string>
@@ -211,6 +212,8 @@
     <string name="session_status_connecting">连接中</string>
     <string name="session_status_reconnecting">重连中</string>
     <string name="session_status_disconnected">已断开</string>
+    <string name="session_status_detached">已脱离，远程会话仍在运行</string>
+    <string name="session_status_unattached">未接管</string>
     <string name="session_status_error">出错</string>
 
     <!-- Builtin Roost commands -->
@@ -326,6 +329,8 @@
     <string name="settings_lock_app_on_open">打开时锁定应用</string>
     <string name="settings_verify_before_connect">连接主机前验证身份</string>
     <string name="settings_verify_before_connect_hint">使用生物识别或设备 PIN／图案。</string>
+    <string name="settings_confirm_before_disconnect">断开前确认</string>
+    <string name="settings_confirm_before_disconnect_hint">关闭后，点击或滑动断开都会立即执行。</string>
     <string name="settings_backup_title">SSH 主机与密钥备份</string>
     <string name="settings_backup_hint">加密导出／导入。</string>
     <string name="settings_theme_header">主题</string>

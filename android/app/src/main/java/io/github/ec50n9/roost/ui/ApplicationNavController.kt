@@ -94,6 +94,8 @@ fun ApplicationNavController() {
             val settingsRepo = SettingsRepository.getInstance(application)
             val requireAuthOnConnect by
                 settingsRepo.requireAuthOnConnect.collectAsStateWithLifecycle()
+            val confirmBeforeDisconnect by
+                settingsRepo.confirmBeforeDisconnect.collectAsStateWithLifecycle()
             val localShellEnabled by settingsRepo.localShellEnabled.collectAsStateWithLifecycle()
             val hosts by vm.hosts.collectAsStateWithLifecycle()
             val hostRuntime by vm.hostRuntime.collectAsStateWithLifecycle()
@@ -186,6 +188,8 @@ fun ApplicationNavController() {
                     }
                 },
                 onRefreshSessions = vm::refresh,
+                confirmBeforeDisconnect = confirmBeforeDisconnect,
+                onConfirmBeforeDisconnectChanged = settingsRepo::setConfirmBeforeDisconnect,
                 onDisconnectServer = vm::disconnect,
                 onDeleteServer = vm::deleteServer,
                 onOpenSettings = { navController.navigate("settings") },
@@ -228,6 +232,8 @@ fun ApplicationNavController() {
             val appLockEnabled by settingsRepo.appLockEnabled.collectAsStateWithLifecycle()
             val requireAuthOnConnect by
                 settingsRepo.requireAuthOnConnect.collectAsStateWithLifecycle()
+            val confirmBeforeDisconnect by
+                settingsRepo.confirmBeforeDisconnect.collectAsStateWithLifecycle()
             val accessoryLayoutIds by settingsRepo.accessoryLayoutIds.collectAsStateWithLifecycle()
             val accessoryBarSingleRow by
                 settingsRepo.accessoryBarSingleRow.collectAsStateWithLifecycle()
@@ -252,6 +258,7 @@ fun ApplicationNavController() {
                 currentFont = fontName,
                 appLockEnabled = appLockEnabled,
                 requireAuthOnConnect = requireAuthOnConnect,
+                confirmBeforeDisconnect = confirmBeforeDisconnect,
                 localShellEnabled = localShellEnabled,
                 keepScreenAwake = keepScreenAwake,
                 hideScreenContents = hideScreenContents,
@@ -274,6 +281,7 @@ fun ApplicationNavController() {
                 onFontSelected = settingsRepo::setFont,
                 onAppLockEnabledChanged = settingsRepo::setAppLockEnabled,
                 onRequireAuthOnConnectChanged = settingsRepo::setRequireAuthOnConnect,
+                onConfirmBeforeDisconnectChanged = settingsRepo::setConfirmBeforeDisconnect,
                 onLocalShellEnabledChanged = settingsRepo::setLocalShellEnabled,
                 onKeepScreenAwakeChanged = settingsRepo::setKeepScreenAwake,
                 onHideScreenContentsChanged = settingsRepo::setHideScreenContents,

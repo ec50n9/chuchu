@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.ec50n9.roost.R
@@ -65,242 +66,229 @@ fun AddServerScreen(vm: AddServerViewModel, onBack: () -> Unit, modifier: Modifi
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
+    val canTest =
+        form.host.isNotBlank() &&
+            form.username.isNotBlank() &&
+            testState.status != ConnectionTestStatus.Running
     Column(
         modifier =
             modifier
                 .fillMaxSize()
                 .background(colors.background)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .verticalScroll(scrollState)
-                .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            ChuText("$ ", style = typography.headline, color = colors.textMuted)
-            ChuText(
+        AddServerTopBar(
+            title =
                 if (form.id != null) {
                     stringResource(R.string.add_server_title_edit)
                 } else {
                     stringResource(R.string.add_server_title_new)
                 },
-                style = typography.headline,
-            )
-        }
-
-        SectionHeader(stringResource(R.string.section_connection))
-        ChuTextField(
-            value = form.name,
-            onValueChange = vm::updateName,
-            label = stringResource(R.string.field_name),
-            placeholder = stringResource(R.string.add_server_name_placeholder),
-            singleLine = true,
-            autoFocus = false,
-            modifier = Modifier.fillMaxWidth(),
+            testStatus = testState.status,
+            canTest = canTest,
+            canSave = form.canSave(),
+            onTest = vm::testConnection,
+            onSave = { vm.save(onBack) },
         )
-        ChuTextField(
-            value = form.host,
-            onValueChange = vm::updateHost,
-            label = stringResource(R.string.field_host),
-            placeholder = "192.168.1.10",
-            singleLine = true,
-            keyboardOptions =
-                KeyboardOptions(
-                    keyboardType = KeyboardType.Uri,
-                    capitalization = KeyboardCapitalization.None,
-                    autoCorrectEnabled = false,
-                ),
-            autoFocus = false,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ConnectionTestFeedback(testState)
+        Column(
+            modifier =
+                Modifier.weight(1f)
+                    .verticalScroll(scrollState)
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            SectionHeader(stringResource(R.string.section_connection))
             ChuTextField(
-                value = form.port,
-                onValueChange = vm::updatePort,
-                label = stringResource(R.string.field_port),
+                value = form.name,
+                onValueChange = vm::updateName,
+                label = stringResource(R.string.field_name),
+                placeholder = stringResource(R.string.add_server_name_placeholder),
+                singleLine = true,
+                autoFocus = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            ChuTextField(
+                value = form.host,
+                onValueChange = vm::updateHost,
+                label = stringResource(R.string.field_host),
+                placeholder = "192.168.1.10",
                 singleLine = true,
                 keyboardOptions =
                     KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
+                        keyboardType = KeyboardType.Uri,
                         capitalization = KeyboardCapitalization.None,
                         autoCorrectEnabled = false,
                     ),
                 autoFocus = false,
-                modifier = Modifier.weight(0.3f),
+                modifier = Modifier.fillMaxWidth(),
             )
-            ChuTextField(
-                value = form.username,
-                onValueChange = vm::updateUsername,
-                label = stringResource(R.string.field_username),
-                placeholder = "root",
-                singleLine = true,
-                keyboardOptions =
-                    KeyboardOptions(
-                        keyboardType = KeyboardType.Ascii,
-                        capitalization = KeyboardCapitalization.None,
-                        autoCorrectEnabled = false,
-                    ),
-                autoFocus = false,
-                modifier = Modifier.weight(0.7f),
-            )
-        }
-
-        SectionDivider()
-
-        SectionHeader(stringResource(R.string.section_transport))
-        ChuSegmentedControl(
-            options = listOf(Transport.SSH, Transport.TailscaleSSH),
-            labels =
-                mapOf(
-                    Transport.SSH to "ssh",
-                    Transport.TailscaleSSH to "tailscale",
-                ),
-            selected = form.transport,
-            onSelect = vm::updateTransport,
-        )
-        if (form.transport == Transport.TailscaleSSH) {
-            ChuText(
-                stringResource(R.string.add_server_tailscale_hint),
-                style = typography.bodySmall,
-                color = colors.textMuted,
-            )
-        }
-
-        SectionDivider()
-
-        SectionHeader(stringResource(R.string.section_authentication))
-        val authOptions =
-            when (form.transport) {
-                Transport.TailscaleSSH ->
-                    listOf(AuthMethod.Password, AuthMethod.Key, AuthMethod.None)
-                else -> listOf(AuthMethod.Password, AuthMethod.Key)
-            }
-        if (form.authMethod == AuthMethod.None && form.transport != Transport.TailscaleSSH) {
-            androidx.compose.runtime.SideEffect { vm.updateAuthMethod(AuthMethod.Password) }
-        }
-        val segmentSelected =
-            if (form.authMethod == AuthMethod.KeyWithPassphrase) AuthMethod.Key else form.authMethod
-        ChuSegmentedControl(
-            options = authOptions,
-            labels =
-                mapOf(
-                    AuthMethod.Password to stringResource(R.string.auth_password),
-                    AuthMethod.Key to stringResource(R.string.auth_ssh_key),
-                    AuthMethod.None to stringResource(R.string.auth_none),
-                ),
-            selected = segmentSelected,
-            onSelect = vm::updateAuthMethod,
-        )
-
-        when (form.authMethod) {
-            AuthMethod.Password -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 ChuTextField(
-                    value = form.password,
-                    onValueChange = vm::updatePassword,
-                    label = stringResource(R.string.field_password),
+                    value = form.port,
+                    onValueChange = vm::updatePort,
+                    label = stringResource(R.string.field_port),
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                        ),
                     autoFocus = false,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.weight(0.3f),
+                )
+                ChuTextField(
+                    value = form.username,
+                    onValueChange = vm::updateUsername,
+                    label = stringResource(R.string.field_username),
+                    placeholder = "root",
+                    singleLine = true,
+                    keyboardOptions =
+                        KeyboardOptions(
+                            keyboardType = KeyboardType.Ascii,
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                        ),
+                    autoFocus = false,
+                    modifier = Modifier.weight(0.7f),
                 )
             }
-            AuthMethod.Key,
-            AuthMethod.KeyWithPassphrase -> {
-                KeyAuthSection(
-                    form = form,
-                    keys = keys,
-                    onGenerate = { vm.generateKey(form.name) },
-                    onSelectKey = { vm.selectStoredKey(it) },
-                    onCopyPublicKey = {
-                        if (form.publicKeyOpenSsh.isBlank()) {
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.add_server_no_public_key),
-                                Toast.LENGTH_SHORT,
-                            )
-                                .show()
-                        } else {
-                            val clipboard =
-                                context.getSystemService(Context.CLIPBOARD_SERVICE)
-                                    as ClipboardManager
-                            clipboard.setPrimaryClip(
-                                ClipData.newPlainText(
-                                    context.getString(R.string.add_server_clipboard_label),
-                                    form.publicKeyOpenSsh,
-                                )
-                            )
-                            Toast.makeText(
-                                context,
-                                context.getString(R.string.add_server_public_key_copied),
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                    },
+
+            SectionDivider()
+
+            SectionHeader(stringResource(R.string.section_transport))
+            ChuSegmentedControl(
+                options = listOf(Transport.SSH, Transport.TailscaleSSH),
+                labels =
+                    mapOf(
+                        Transport.SSH to "ssh",
+                        Transport.TailscaleSSH to "tailscale",
+                    ),
+                selected = form.transport,
+                onSelect = vm::updateTransport,
+            )
+            if (form.transport == Transport.TailscaleSSH) {
+                ChuText(
+                    stringResource(R.string.add_server_tailscale_hint),
+                    style = typography.bodySmall,
+                    color = colors.textMuted,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    ChuSwitch(
-                        checked = form.authMethod == AuthMethod.KeyWithPassphrase,
-                        onCheckedChange = { checked ->
-                            if (checked) {
-                                vm.updateAuthMethod(AuthMethod.KeyWithPassphrase)
-                            } else {
-                                vm.updateAuthMethod(AuthMethod.Key)
-                                vm.updateKeyPassphrase("")
-                            }
-                        },
-                    )
-                    ChuText(stringResource(R.string.add_server_set_passphrase), style = typography.label)
+            }
+
+            SectionDivider()
+
+            SectionHeader(stringResource(R.string.section_authentication))
+            val authOptions =
+                when (form.transport) {
+                    Transport.TailscaleSSH ->
+                        listOf(AuthMethod.Password, AuthMethod.Key, AuthMethod.None)
+                    else -> listOf(AuthMethod.Password, AuthMethod.Key)
                 }
-                if (form.authMethod == AuthMethod.KeyWithPassphrase) {
+            if (form.authMethod == AuthMethod.None && form.transport != Transport.TailscaleSSH) {
+                androidx.compose.runtime.SideEffect { vm.updateAuthMethod(AuthMethod.Password) }
+            }
+            val segmentSelected =
+                if (form.authMethod == AuthMethod.KeyWithPassphrase) AuthMethod.Key else form.authMethod
+            ChuSegmentedControl(
+                options = authOptions,
+                labels =
+                    mapOf(
+                        AuthMethod.Password to stringResource(R.string.auth_password),
+                        AuthMethod.Key to stringResource(R.string.auth_ssh_key),
+                        AuthMethod.None to stringResource(R.string.auth_none),
+                    ),
+                selected = segmentSelected,
+                onSelect = vm::updateAuthMethod,
+            )
+
+            when (form.authMethod) {
+                AuthMethod.Password -> {
                     ChuTextField(
-                        value = form.keyPassphrase,
-                        onValueChange = vm::updateKeyPassphrase,
-                        label = stringResource(R.string.field_passphrase),
+                        value = form.password,
+                        onValueChange = vm::updatePassword,
+                        label = stringResource(R.string.field_password),
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         autoFocus = false,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                AuthMethod.Key,
+                AuthMethod.KeyWithPassphrase -> {
+                    KeyAuthSection(
+                        form = form,
+                        keys = keys,
+                        onGenerate = { vm.generateKey(form.name) },
+                        onSelectKey = { vm.selectStoredKey(it) },
+                        onCopyPublicKey = {
+                            if (form.publicKeyOpenSsh.isBlank()) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.add_server_no_public_key),
+                                    Toast.LENGTH_SHORT,
+                                )
+                                    .show()
+                            } else {
+                                val clipboard =
+                                    context.getSystemService(Context.CLIPBOARD_SERVICE)
+                                        as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        context.getString(R.string.add_server_clipboard_label),
+                                        form.publicKeyOpenSsh,
+                                    )
+                                )
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.add_server_public_key_copied),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        ChuSwitch(
+                            checked = form.authMethod == AuthMethod.KeyWithPassphrase,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    vm.updateAuthMethod(AuthMethod.KeyWithPassphrase)
+                                } else {
+                                    vm.updateAuthMethod(AuthMethod.Key)
+                                    vm.updateKeyPassphrase("")
+                                }
+                            },
+                        )
+                        ChuText(stringResource(R.string.add_server_set_passphrase), style = typography.label)
+                    }
+                    if (form.authMethod == AuthMethod.KeyWithPassphrase) {
+                        ChuTextField(
+                            value = form.keyPassphrase,
+                            onValueChange = vm::updateKeyPassphrase,
+                            label = stringResource(R.string.field_passphrase),
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            autoFocus = false,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                AuthMethod.None -> {
+                    ChuText(
+                        stringResource(R.string.add_server_ssh_key_only_hint),
+                        style = typography.bodySmall,
+                        color = colors.textMuted,
+                    )
+                }
             }
-            AuthMethod.None -> {
-                ChuText(
-                    stringResource(R.string.add_server_ssh_key_only_hint),
-                    style = typography.bodySmall,
-                    color = colors.textMuted,
-                )
-            }
-        }
 
-        SectionDivider()
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            ChuButton(
-                onClick = { showAdditionalSettings = !showAdditionalSettings },
-                variant = ChuButtonVariant.Outlined,
-                bracketed = true,
-            ) {
-                ChuText(stringResource(R.string.add_server_additional_settings), style = typography.label)
-            }
-        }
-        if (showAdditionalSettings) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                ChuText(stringResource(R.string.add_server_require_biometric), style = typography.label)
-                ChuSwitch(
-                    checked = form.requireAuthOnConnect,
-                    onCheckedChange = vm::updateRequireAuthOnConnect,
-                )
-            }
             SectionDivider()
             MultiplexerSection(selected = form.multiplexer, onSelect = vm::updateMultiplexer)
             // Only a multiplexer host has an "attached but idle" state to restore, so the
@@ -321,44 +309,142 @@ fun AddServerScreen(vm: AddServerViewModel, onBack: () -> Unit, modifier: Modifi
                     )
                 }
             }
-            SectionDivider()
-            PostConnectActionSection(
-                command = form.postConnectCommand,
-                onCommandChange = vm::updatePostConnectCommand,
-            )
-            SectionDivider()
-        }
 
-        val canTest = form.host.isNotBlank() && form.username.isNotBlank()
-        ChuButton(
-            onClick = vm::testConnection,
-            enabled = canTest,
-            variant = ChuButtonVariant.Outlined,
-            bracketed = true,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            val label =
-                when (testState.status) {
-                    ConnectionTestStatus.Idle -> stringResource(R.string.add_server_test_idle)
-                    ConnectionTestStatus.Running -> stringResource(R.string.add_server_test_running)
-                    ConnectionTestStatus.Success -> stringResource(R.string.add_server_test_success)
-                    ConnectionTestStatus.Error -> stringResource(R.string.add_server_test_error)
+            SectionDivider()
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                ChuButton(
+                    onClick = { showAdditionalSettings = !showAdditionalSettings },
+                    variant = ChuButtonVariant.Outlined,
+                    bracketed = true,
+                ) {
+                    ChuText(stringResource(R.string.add_server_additional_settings), style = typography.label)
                 }
-            ChuText(label, style = typography.label)
+            }
+            if (showAdditionalSettings) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    ChuText(stringResource(R.string.add_server_require_biometric), style = typography.label)
+                    ChuSwitch(
+                        checked = form.requireAuthOnConnect,
+                        onCheckedChange = vm::updateRequireAuthOnConnect,
+                    )
+                }
+                SectionDivider()
+                PostConnectActionSection(
+                    command = form.postConnectCommand,
+                    onCommandChange = vm::updatePostConnectCommand,
+                )
+                SectionDivider()
+            }
+
         }
-        if (testState.status == ConnectionTestStatus.Error && testState.message != null) {
-            ChuText(testState.message ?: "", style = typography.bodySmall, color = colors.error)
-        }
-        ChuButton(
-            onClick = { vm.save(onBack) },
-            enabled = form.canSave(),
-            variant = ChuButtonVariant.Outlined,
-            bracketed = true,
-            borderColor = colors.accent,
-            modifier = Modifier.fillMaxWidth(),
+    }
+}
+
+@Composable
+private fun AddServerTopBar(
+    title: String,
+    testStatus: ConnectionTestStatus,
+    canTest: Boolean,
+    canSave: Boolean,
+    onTest: () -> Unit,
+    onSave: () -> Unit,
+) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
         ) {
-            ChuText(stringResource(R.string.action_save), style = typography.label, color = colors.accent)
+            ChuText("$ ", style = typography.headline, color = colors.textMuted)
+            ChuText(
+                title,
+                style = typography.headline,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ChuButton(
+                onClick = onTest,
+                enabled = canTest,
+                variant = ChuButtonVariant.Outlined,
+                bracketed = true,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                contentDescription =
+                    stringResource(
+                        if (testStatus == ConnectionTestStatus.Running) {
+                            R.string.add_server_test_running
+                        } else {
+                            R.string.add_server_test_idle
+                        }
+                    ),
+            ) {
+                ChuText(
+                    if (testStatus == ConnectionTestStatus.Running) {
+                        stringResource(R.string.add_server_test_running)
+                    } else {
+                        stringResource(R.string.add_server_test_short)
+                    },
+                    style = typography.label,
+                )
+            }
+            ChuButton(
+                onClick = onSave,
+                enabled = canSave,
+                variant = ChuButtonVariant.Outlined,
+                bracketed = true,
+                borderColor = colors.accent,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                ChuText(
+                    stringResource(R.string.action_save),
+                    style = typography.label,
+                    color = colors.accent,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionTestFeedback(testState: ConnectionTestState) {
+    val colors = ChuColors.current
+    val typography = ChuTypography.current
+    when (testState.status) {
+        ConnectionTestStatus.Success ->
+            ChuText(
+                stringResource(R.string.add_server_test_success),
+                style = typography.bodySmall,
+                color = colors.success,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
+            )
+        ConnectionTestStatus.Error ->
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ChuText(
+                    stringResource(R.string.add_server_test_error),
+                    style = typography.bodySmall,
+                    color = colors.error,
+                )
+                testState.message?.let { message ->
+                    ChuText(message, style = typography.bodySmall, color = colors.error)
+                }
+            }
+        else -> Unit
     }
 }
 

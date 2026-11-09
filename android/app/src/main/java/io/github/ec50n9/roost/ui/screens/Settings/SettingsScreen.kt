@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,6 +51,7 @@ fun SettingsScreen(
     currentFont: String,
     appLockEnabled: Boolean,
     requireAuthOnConnect: Boolean,
+    confirmBeforeDisconnect: Boolean,
     localShellEnabled: Boolean,
     keepScreenAwake: Boolean,
     hideScreenContents: Boolean,
@@ -72,6 +74,7 @@ fun SettingsScreen(
     onFontSelected: (String) -> Unit,
     onAppLockEnabledChanged: (Boolean) -> Unit,
     onRequireAuthOnConnectChanged: (Boolean) -> Unit,
+    onConfirmBeforeDisconnectChanged: (Boolean) -> Unit,
     onLocalShellEnabledChanged: (Boolean) -> Unit,
     onKeepScreenAwakeChanged: (Boolean) -> Unit,
     onHideScreenContentsChanged: (Boolean) -> Unit,
@@ -111,15 +114,16 @@ fun SettingsScreen(
     }
 
     Box(modifier = modifier.fillMaxSize().background(colors.background)) {
-        LazyColumn(
+        Column(
             modifier =
                 Modifier.fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(16.dp)
                     .imePadding(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -139,9 +143,7 @@ fun SettingsScreen(
                         ChuText("x", style = typography.label, color = colors.textMuted)
                     }
                 }
-            }
 
-            item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -166,6 +168,11 @@ fun SettingsScreen(
                 }
             }
 
+            LazyColumn(
+                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
             item {
                 when (selectedCategory) {
                     SettingsCategory.General ->
@@ -180,8 +187,10 @@ fun SettingsScreen(
                             onFontSelected = onFontSelected,
                             appLockEnabled = appLockEnabled,
                             requireAuthOnConnect = requireAuthOnConnect,
+                            confirmBeforeDisconnect = confirmBeforeDisconnect,
                             onAppLockEnabledChanged = onAppLockEnabledChanged,
                             onRequireAuthOnConnectChanged = onRequireAuthOnConnectChanged,
+                            onConfirmBeforeDisconnectChanged = onConfirmBeforeDisconnectChanged,
                             onOpenBackup = { showBackupSheet = true },
                         )
                     SettingsCategory.Terminal ->
@@ -216,6 +225,7 @@ fun SettingsScreen(
                     SettingsCategory.Keys -> KeysContent(vm = keysViewModel)
                 }
             }
+        }
         }
 
         AccessoryLayoutEditorSheet(
@@ -267,8 +277,10 @@ private fun GeneralSettings(
     onFontSelected: (String) -> Unit,
     appLockEnabled: Boolean,
     requireAuthOnConnect: Boolean,
+    confirmBeforeDisconnect: Boolean,
     onAppLockEnabledChanged: (Boolean) -> Unit,
     onRequireAuthOnConnectChanged: (Boolean) -> Unit,
+    onConfirmBeforeDisconnectChanged: (Boolean) -> Unit,
     onOpenBackup: () -> Unit = {},
 ) {
     val typography = ChuTypography.current
@@ -318,6 +330,24 @@ private fun GeneralSettings(
     Spacer(modifier = Modifier.height(4.dp))
     ChuText(
         stringResource(R.string.settings_verify_before_connect_hint),
+        style = typography.bodySmall,
+        color = colors.textMuted,
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ChuText(stringResource(R.string.settings_confirm_before_disconnect), style = typography.label)
+        ChuSwitch(
+            checked = confirmBeforeDisconnect,
+            onCheckedChange = onConfirmBeforeDisconnectChanged,
+        )
+    }
+    Spacer(modifier = Modifier.height(4.dp))
+    ChuText(
+        stringResource(R.string.settings_confirm_before_disconnect_hint),
         style = typography.bodySmall,
         color = colors.textMuted,
     )

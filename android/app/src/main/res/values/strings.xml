@@ -67,6 +67,7 @@
     <string name="server_list_disconnect_before_delete">Disconnect before deleting this host</string>
     <string name="server_list_add_server">+ add server</string>
     <string name="server_list_disconnect_title">Disconnect %1$s?</string>
+    <string name="server_list_disconnect_dont_ask_again">don\'t ask again</string>
     <plurals name="server_list_disconnect_body_detach">
         <item quantity="one">This disconnects %1$d session. It keeps running on the host.</item>
         <item quantity="other">This disconnects %1$d sessions. They keep running on the host.</item>
@@ -99,9 +100,9 @@
     <string name="add_server_require_biometric">require biometric auth</string>
     <string name="add_server_auto_connect">connect when the app opens</string>
     <string name="add_server_test_idle">test connection</string>
+    <string name="add_server_test_short">test</string>
     <string name="add_server_test_running">testing…</string>
-    <string name="add_server_test_success">connected</string>
-    <string name="add_server_test_connected_message">Connected</string>
+    <string name="add_server_test_success">test passed</string>
     <string name="add_server_test_error">test failed</string>
     <string name="add_server_copy_public_key">copy public key</string>
     <string name="add_server_new_key">new key</string>
@@ -221,6 +222,8 @@
     <string name="session_status_connecting">connecting</string>
     <string name="session_status_reconnecting">reconnecting</string>
     <string name="session_status_disconnected">disconnected</string>
+    <string name="session_status_detached">detached; remote session is still running</string>
+    <string name="session_status_unattached">not attached</string>
     <string name="session_status_error">error</string>
 
     <!-- Builtin Roost commands -->
@@ -342,6 +345,8 @@
     <string name="settings_lock_app_on_open">lock app on open</string>
     <string name="settings_verify_before_connect">verify before server connect</string>
     <string name="settings_verify_before_connect_hint">use biometrics or device PIN/pattern.</string>
+    <string name="settings_confirm_before_disconnect">confirm before disconnecting</string>
+    <string name="settings_confirm_before_disconnect_hint">When off, both the disconnect button and swipe action run immediately.</string>
     <string name="settings_backup_title">ssh hosts &amp; keys backup</string>
     <string name="settings_backup_hint">encrypted export/import.</string>
     <string name="settings_theme_header">THEME</string>

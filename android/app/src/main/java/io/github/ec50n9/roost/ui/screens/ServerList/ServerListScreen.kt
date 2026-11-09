@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -57,7 +59,10 @@ import io.github.ec50n9.roost.model.Transport
 import io.github.ec50n9.roost.service.terminal.HostKeyPrompt
 import io.github.ec50n9.roost.service.terminal.TabSession
 import io.github.ec50n9.roost.service.terminal.TerminalSessionRepository
+import io.github.ec50n9.roost.ui.screens.Terminal.SessionIndicator
+import io.github.ec50n9.roost.ui.screens.Terminal.sessionIndicator
 import io.github.ec50n9.roost.ui.screens.Terminal.statusDotColor
+import io.github.ec50n9.roost.ui.screens.Terminal.statusDotSymbol
 import io.github.ec50n9.roost.ui.screens.Terminal.terminalTabDisplayLabel
 import io.github.ec50n9.roost.ui.components.ChuButton
 import io.github.ec50n9.roost.ui.components.ChuButtonVariant
@@ -67,9 +72,13 @@ import io.github.ec50n9.roost.ui.components.HostKeyPromptDialog
 import io.github.ec50n9.roost.ui.components.KeepImeClosed
 import io.github.ec50n9.roost.ui.components.ChuText
 import io.github.ec50n9.roost.ui.components.ChuTextField
+import io.github.ec50n9.roost.ui.components.ChuSwitch
 import io.github.ec50n9.roost.ui.components.TuiBadge
 import io.github.ec50n9.roost.ui.theme.ChuColors
 import io.github.ec50n9.roost.ui.theme.ChuTypography
+
+/** Button height, bottom margin and a 12dp gap keep the last card clear of the FAB. */
+private val FloatingActionInset = 72.dp
 
 @Composable
 fun ServerListScreen(
@@ -87,6 +96,8 @@ fun ServerListScreen(
     onOpenSession: (Long, SessionRow) -> Unit,
     onNewSession: (Long) -> Unit,
     onRefreshSessions: (Long) -> Unit,
+    confirmBeforeDisconnect: Boolean,
+    onConfirmBeforeDisconnectChanged: (Boolean) -> Unit,
     onDisconnectServer: (Long) -> Unit,
     onDeleteServer: (Long) -> Unit,
     onOpenSettings: () -> Unit,
@@ -141,8 +152,22 @@ fun ServerListScreen(
         }
     }
 
+    fun requestDisconnect(hostId: Long) {
+        if (confirmBeforeDisconnect) {
+            pendingDisconnectHostId = hostId
+        } else {
+            selectedHostId = null
+            onDisconnectServer(hostId)
+        }
+    }
+
     val colors = ChuColors.current
     val typography = ChuTypography.current
+    // Two hosts with the same name are indistinguishable once the card hides the address, so the
+    // address line comes back only for those.
+    val duplicateNames = remember(hosts) {
+        hosts.groupBy { it.name }.filterValues { it.size > 1 }.keys
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -152,7 +177,7 @@ fun ServerListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(12.dp),
+                .padding(start = 12.dp, top = 12.dp, end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
@@ -211,7 +236,10 @@ fun ServerListScreen(
 
             SectionHeader(stringResource(R.string.server_list_header_hosts))
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(bottom = FloatingActionInset),
+            ) {
                 if (localShellEnabled) {
                     item(key = "local-shell") {
                         LocalShellCard(
@@ -243,6 +271,7 @@ fun ServerListScreen(
                         HostCard(
                             host = host,
                             isConnected = isConnected,
+                            showAddress = host.name in duplicateNames,
                             runtime = runtime,
                             openTabs = openTabs,
                             onOpenSession = { row -> onOpenSession(host.id, row) },
@@ -276,9 +305,7 @@ fun ServerListScreen(
                                     onConnectServer(host.id)
                                 }
                             },
-                            onDisconnect = {
-                                pendingDisconnectHostId = host.id
-                            },
+                            onDisconnect = { requestDisconnect(host.id) },
                         )
                     }
                 }
@@ -300,12 +327,14 @@ fun ServerListScreen(
 
         val pendingDisconnectHost = hosts.firstOrNull { it.id == pendingDisconnectHostId }
         if (pendingDisconnectHost != null) {
+            var dontAskAgain by remember(pendingDisconnectHost.id) { mutableStateOf(false) }
             val sessionCount = openTabs.count { it.spec.hostId == pendingDisconnectHost.id }
             ChuDialog(
                 title = stringResource(R.string.server_list_disconnect_title, pendingDisconnectHost.name),
                 confirmLabel = stringResource(R.string.dialog_confirm_disconnect),
                 dismissLabel = stringResource(R.string.dialog_dismiss),
                 onConfirm = {
+                    if (dontAskAgain) onConfirmBeforeDisconnectChanged(false)
                     selectedHostId = null
                     onDisconnectServer(pendingDisconnectHost.id)
                     pendingDisconnectHostId = null
@@ -334,6 +363,23 @@ fun ServerListScreen(
                     style = typography.body,
                     color = colors.warning,
                 )
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth()
+                            .clickable { dontAskAgain = !dontAskAgain }
+                            .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ChuText(
+                        stringResource(R.string.server_list_disconnect_dont_ask_again),
+                        style = typography.label,
+                    )
+                    ChuSwitch(
+                        checked = dontAskAgain,
+                        onCheckedChange = { dontAskAgain = it },
+                    )
+                }
             }
         }
 
@@ -457,6 +503,7 @@ private fun LocalShellCard(
 private fun HostCard(
     host: HostProfile,
     isConnected: Boolean,
+    showAddress: Boolean,
     runtime: HostRuntime,
     openTabs: List<TabSession>,
     onOpenSession: (SessionRow) -> Unit,
@@ -479,7 +526,6 @@ private fun HostCard(
     val swipeOffsetX = remember(host.id) { Animatable(0f) }
     // Tapping the card body folds the session list; it never connects and never enters a session.
     var sessionsExpanded by remember(host.id) { mutableStateOf(true) }
-    val hostLabel = "> ${host.username}@${host.host}:${host.port}"
 
     LaunchedEffect(isConnected) {
         if (!isConnected) {
@@ -655,25 +701,29 @@ private fun HostCard(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        if (showAddress) {
                             ChuText(
-                                hostLabel,
+                                "> ${host.username}@${host.host}:${host.port}",
                                 style = typography.body,
                                 color = colors.textSecondary,
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            if (host.transport == Transport.TailscaleSSH) {
-                                TuiBadge(
-                                    text = stringResource(R.string.badge_tailscale),
-                                    color = colors.accent,
-                                )
+                        }
+
+                        if (host.transport == Transport.TailscaleSSH || host.multiplexer != null) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (host.transport == Transport.TailscaleSSH) {
+                                    TuiBadge(
+                                        text = stringResource(R.string.badge_tailscale),
+                                        color = colors.textMuted,
+                                    )
+                                }
+                                host.multiplexer?.let { multiplexer ->
+                                    TuiBadge(text = multiplexer.label, color = colors.textMuted)
+                                }
                             }
                         }
 
@@ -774,6 +824,15 @@ private fun HostSessionRow(row: SessionRow, tab: TabSession?, onClick: () -> Uni
             ?: state?.title?.takeIf { it.isNotBlank() }
             ?: tab?.let { terminalTabDisplayLabel(it) }
             ?: row.key
+    val indicator = sessionIndicator(state?.status, tab?.parked == true)
+    val indicatorDescription =
+        when (indicator) {
+            SessionIndicator.Connected -> stringResource(R.string.session_status_connected)
+            SessionIndicator.Connecting -> stringResource(R.string.session_status_connecting)
+            SessionIndicator.Detached -> stringResource(R.string.session_status_detached)
+            SessionIndicator.Inactive -> stringResource(R.string.session_status_unattached)
+            SessionIndicator.Error -> stringResource(R.string.session_status_error)
+        }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -784,9 +843,10 @@ private fun HostSessionRow(row: SessionRow, tab: TabSession?, onClick: () -> Uni
     ) {
         ChuText("└", style = typography.labelSmall, color = colors.textMuted)
         ChuText(
-            "●",
+            statusDotSymbol(indicator),
             style = typography.labelSmall,
-            color = state?.let { statusDotColor(it.status, colors) } ?: colors.textMuted,
+            color = statusDotColor(indicator, colors),
+            modifier = Modifier.semantics { contentDescription = indicatorDescription },
         )
         ChuText(
             label,

@@ -59,8 +59,8 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
     private val _form = MutableStateFlow(AddServerForm())
     val form: StateFlow<AddServerForm> = _form.asStateFlow()
 
-    private val _testState = MutableStateFlow(ConnectionTestState())
-    val testState: StateFlow<ConnectionTestState> = _testState.asStateFlow()
+    private val connectionTests = ConnectionTestController()
+    val testState: StateFlow<ConnectionTestState> = connectionTests.state
 
     private val _allKeys = MutableStateFlow<List<SshKey>>(emptyList())
     val keys: StateFlow<List<SshKey>> = _allKeys.asStateFlow()
@@ -104,22 +104,27 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
 
     fun updateHost(host: String) {
         _form.value = _form.value.copy(host = host.filterNot { it.isWhitespace() })
+        connectionTests.invalidate()
     }
 
     fun updatePort(port: String) {
         _form.value = _form.value.copy(port = port)
+        connectionTests.invalidate()
     }
 
     fun updateUsername(username: String) {
         _form.value = _form.value.copy(username = username)
+        connectionTests.invalidate()
     }
 
     fun updatePassword(password: String) {
         _form.value = _form.value.copy(password = password)
+        connectionTests.invalidate()
     }
 
     fun updateKeyPassphrase(passphrase: String) {
         _form.value = _form.value.copy(keyPassphrase = passphrase)
+        connectionTests.invalidate()
     }
 
     fun selectStoredKey(keyId: Long?) {
@@ -135,6 +140,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                     publicKeyOpenSsh = selected?.publicKeyOpenSsh ?: "",
                     keyPassphrase = "",
                 )
+            connectionTests.invalidate()
         }
     }
 
@@ -143,15 +149,20 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
             val current = _form.value
             val baseName = if (nameHint.isNotBlank()) nameHint else current.name
             when (val result = sshKeyRepository.generate(baseName, current.keyPassphrase)) {
-                is KeyGenerationResult.Success ->
+                is KeyGenerationResult.Success -> {
                     _form.value =
                         _form.value.copy(
                             keyId = result.key.id,
                             privateKeyPem = result.key.privateKeyPem,
                             publicKeyOpenSsh = result.key.publicKeyOpenSsh,
                         )
+                    connectionTests.invalidate()
+                }
                 KeyGenerationResult.Failed ->
-                    _errorMessage.emit(getApplication<Application>().getString(R.string.add_server_key_generation_failed))
+                    _errorMessage.emit(
+                        getApplication<Application>()
+                            .getString(R.string.add_server_key_generation_failed)
+                    )
             }
         }
     }
@@ -168,11 +179,9 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
             current.copy(
                 transport = transport,
                 authMethod = nextAuthMethod,
-                multiplexer =
-                    current.multiplexer.takeIf {
-                        it?.runtimeSupported == true
-                    },
+                multiplexer = current.multiplexer.takeIf { it?.runtimeSupported == true },
             )
+        connectionTests.invalidate()
     }
 
     fun updateAuthMethod(authMethod: AuthMethod) {
@@ -180,9 +189,11 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
         if (authMethod == AuthMethod.None) {
             _form.value =
                 current.copy(transport = Transport.TailscaleSSH, authMethod = AuthMethod.None)
+            connectionTests.invalidate()
             return
         }
         _form.value = current.copy(authMethod = authMethod)
+        connectionTests.invalidate()
     }
 
     fun updateRequireAuthOnConnect(enabled: Boolean) {
@@ -199,9 +210,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
 
     fun updateMultiplexer(multiplexer: MultiplexerType?) {
         val current = _form.value
-        val selected = multiplexer?.takeIf {
-            it.runtimeSupported
-        }
+        val selected = multiplexer?.takeIf { it.runtimeSupported }
         _form.value =
             current.copy(
                 multiplexer = selected,
@@ -217,7 +226,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
         if (host.isBlank()) return
         val username = current.username.trim()
         if (username.isBlank()) return
-        _testState.value = ConnectionTestState(status = ConnectionTestStatus.Running)
+        val testToken = connectionTests.begin() ?: return
         viewModelScope.launch {
             var hostKeyError: String? = null
             val result =
@@ -267,14 +276,10 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                         }
                     }
                 }
-            _testState.value =
+            connectionTests.finish(
+                testToken,
                 if (result.isSuccess) {
-                    ConnectionTestState(
-                        status = ConnectionTestStatus.Success,
-                        message =
-                            getApplication<Application>()
-                                .getString(R.string.add_server_test_connected_message),
-                    )
+                    ConnectionTestState(status = ConnectionTestStatus.Success)
                 } else {
                     ConnectionTestState(
                         status = ConnectionTestStatus.Error,
@@ -284,7 +289,8 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                                 ?: getApplication<Application>()
                                     .getString(R.string.terminal_connection_failed),
                     )
-                }
+                },
+            )
         }
     }
 
@@ -311,10 +317,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                     authMethod = current.authMethod,
                     requireAuthOnConnect = current.requireAuthOnConnect,
                     postConnectCommand = current.postConnectCommand.trim().ifBlank { null },
-                    multiplexer =
-                        current.multiplexer.takeIf {
-                            it?.runtimeSupported == true
-                        },
+                    multiplexer = current.multiplexer.takeIf { it?.runtimeSupported == true },
                     autoConnect = current.autoConnect && current.multiplexer != null,
                     remotePath = current.remotePath.trim().ifBlank { null },
                 )
@@ -366,3 +369,36 @@ data class ConnectionTestState(
     val status: ConnectionTestStatus = ConnectionTestStatus.Idle,
     val message: String? = null,
 )
+
+/** A test result belongs only to the connection parameters that started it. */
+internal class ConnectionTestController {
+    private var revision = 0L
+    private val _state = MutableStateFlow(ConnectionTestState())
+    val state: StateFlow<ConnectionTestState> = _state.asStateFlow()
+
+    fun invalidate() {
+        revision += 1
+        // A running test keeps its progress on screen: clearing it would re-enable the button and
+        // let a second connection start while the first handshake is still in flight.
+        if (_state.value.status != ConnectionTestStatus.Running) {
+            _state.value = ConnectionTestState()
+        }
+    }
+
+    fun begin(): Long? {
+        if (_state.value.status == ConnectionTestStatus.Running) return null
+        revision += 1
+        _state.value = ConnectionTestState(status = ConnectionTestStatus.Running)
+        return revision
+    }
+
+    fun finish(token: Long, result: ConnectionTestState) {
+        when {
+            token == revision -> _state.value = result
+            // The parameters changed while this test ran, so its result is worthless — but the
+            // progress it put on screen must not stay stuck there.
+            _state.value.status == ConnectionTestStatus.Running ->
+                _state.value = ConnectionTestState()
+        }
+    }
+}

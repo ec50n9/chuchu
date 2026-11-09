@@ -14,6 +14,26 @@ that shape every change here:
   The same goes for the `chuchu.db` database name, the `chuchu_settings` preferences name and the
   `CHUCHU_EXIT` / `CHUCHU_TERM_OK` shell protocol markers — none of them are user visible.
 
+## Android Testing
+
+Unit tests run on the JVM through Robolectric — no emulator, no `adb`, no device. Prefer this
+path; reach for a real device only for things the JVM cannot model (real SSH connection, tmux
+render latency, IME behavior of a specific ROM).
+
+```bash
+make test                                   # ./gradlew testDebugUnitTest -> Robolectric
+cd android && ./gradlew testDebugUnitTest --tests '*ServerListScreenTest*'
+cd android && ./gradlew testDebugUnitTest -Proborazzi.test.record=true   # write screenshots
+```
+
+Screenshot tests (Roborazzi) render real Compose with the real theme and write PNGs to
+`android/app/build/outputs/roborazzi/`. Recording is gated on `-Proborazzi.test.record=true`;
+without it the capture calls are skipped, so a fresh PNG only appears when you ask for it.
+See `ui/theme/ThemeScreenshotTest.kt` for the setup (`@GraphicsMode(NATIVE)` + `captureRoboImage`).
+
+`androidTest/` is effectively empty. Do not grow it — instrumentation tests need a device and
+are slow; anything testable that way should be refactored into plain JVM code first.
+
 ## Zig Development
 
 Always use `zigdoc` to discover APIs for the Zig standard library and any third-party dependencies.
