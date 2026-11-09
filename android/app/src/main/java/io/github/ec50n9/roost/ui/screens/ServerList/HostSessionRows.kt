@@ -16,11 +16,16 @@ data class SessionRow(
 )
 
 data class HostRuntime(
+    /** The link exists (or is being made): the card is connected and can be disconnected. */
     val linked: Boolean = false,
+    /** The probe came back: only then is there anything to create a session against. */
+    val online: Boolean = false,
     val loading: Boolean = false,
     /** A "+ new session" for this host is still resolving its name over SSH. */
     val creating: Boolean = false,
-    val error: String? = null,
+    /** One line under the card: a check result, or why the last action failed. */
+    val message: String? = null,
+    val messageIsError: Boolean = false,
     val rows: List<SessionRow> = emptyList(),
 )
 

@@ -16,7 +16,7 @@ import io.github.ec50n9.roost.model.SshKey
 
 @Database(
     entities = [HostProfile::class, SshKey::class],
-    version = 14,
+    version = 15,
     autoMigrations = [
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7, spec = AppDatabase.Migration6To7::class),
@@ -26,6 +26,7 @@ import io.github.ec50n9.roost.model.SshKey
         AutoMigration(from = 10, to = 11),
         AutoMigration(from = 11, to = 12),
         AutoMigration(from = 12, to = 13),
+        AutoMigration(from = 14, to = 15, spec = AppDatabase.Migration14To15::class),
     ],
 )
 @TypeConverters(Converters::class)
@@ -42,6 +43,15 @@ abstract class AppDatabase : RoomDatabase() {
         toColumnName = "postConnectCommand",
     )
     class Migration9To10 : AutoMigrationSpec
+
+    // 14 -> 15: the flag stopped being a per-host switch the user sets and became the remembered
+    // connection state, so it is renamed to say what it now means.
+    @RenameColumn(
+        tableName = "host_profiles",
+        fromColumnName = "autoConnect",
+        toColumnName = "linked",
+    )
+    class Migration14To15 : AutoMigrationSpec
 
     companion object {
         @Volatile

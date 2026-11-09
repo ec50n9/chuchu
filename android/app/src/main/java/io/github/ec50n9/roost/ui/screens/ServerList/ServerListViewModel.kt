@@ -38,9 +38,9 @@ class ServerListViewModel(
     private val sessionRepository = TerminalSessionRepository.getInstance(application)
 
     private val searchQuery = MutableStateFlow("")
-    private val actionErrors = MutableStateFlow<Map<Long, String>>(emptyMap())
+    private val hostNotices = MutableStateFlow<Map<Long, HostNotice>>(emptyMap())
     private val creatingHostIds = MutableStateFlow<Set<Long>>(emptySet())
-    private val autoConnectedHostIds = MutableStateFlow<Set<Long>>(emptySet())
+    private val restoredHostIds = MutableStateFlow<Set<Long>>(emptySet())
 
     val hosts: StateFlow<List<HostProfile>> = hostRepository.observeAll()
         .combine(searchQuery) { hosts, query ->
@@ -63,16 +63,16 @@ class ServerListViewModel(
             hostRepository.observeAll(),
             sessionRepository.hostLinks,
             sessionRepository.tabs,
-            actionErrors,
+            hostNotices,
             creatingHostIds,
-        ) { hosts, links, tabs, errors, creating ->
+        ) { hosts, links, tabs, notices, creating ->
             hosts.associate { host ->
                 host.id to
                     runtimeFor(
                         host = host,
                         link = links[host.id],
                         hostTabs = tabs.filter { it.spec.hostId == host.id },
-                        actionError = errors[host.id],
+                        notice = notices[host.id],
                         creating = creating.contains(host.id),
                     )
             }
@@ -91,14 +91,16 @@ class ServerListViewModel(
     )
 
     init {
-        // Auto-connect is a per-host opt-in: link the host so its sessions show up without a tap.
+        // A host is linked because the user linked it, and `linked` is where that survives the app.
+        // Restoring only re-lists the multiplexer sessions, so a restart lands on the same hub the
+        // user left. Hosts that cannot link silently are skipped by the guard, never force-linked.
         viewModelScope.launch {
             hostRepository.observeAll().collect { hosts ->
                 hosts.filter {
-                    shouldAutoConnect(it, settingsRepository.requireAuthOnConnect.value)
+                    shouldRestoreLink(it, settingsRepository.requireAuthOnConnect.value)
                 }.forEach { host ->
-                    if (autoConnectedHostIds.value.contains(host.id)) return@forEach
-                    autoConnectedHostIds.update { it + host.id }
+                    if (restoredHostIds.value.contains(host.id)) return@forEach
+                    restoredHostIds.update { it + host.id }
                     connect(host.id)
                 }
             }
@@ -116,33 +118,38 @@ class ServerListViewModel(
         }
     }
 
-    /** Links the host and, on a host without a multiplexer, opens its first session. */
+    /**
+     * Links the host. Both kinds end up in the same state: a multiplexer host fills in its remote
+     * session list, a bare SSH host has no list, so linking it is the connectivity check. Nothing
+     * here creates a session — that is what "+ new session" is for, once the link is up.
+     */
     fun connect(hostId: Long, keyPassphrase: String? = null) {
         viewModelScope.launch {
             val spec = specForHost(hostId, keyPassphrase) ?: return@launch
-            sessionRepository.connectHost(spec)?.let { _openSession.tryEmit(it.id) }
+            clearNotice(hostId)
+            sessionRepository.connectHost(spec)
         }
     }
 
     fun disconnect(hostId: Long) {
-        clearActionError(hostId)
+        clearNotice(hostId)
         sessionRepository.disconnectHost(hostId)
     }
 
     fun refresh(hostId: Long) {
-        clearActionError(hostId)
+        clearNotice(hostId)
         sessionRepository.refreshHost(hostId)
     }
 
     /** Re-reads every linked host: sessions come and go on the remote while the terminal is up. */
     fun refreshLinkedHosts() {
-        sessionRepository.hostLinks.value.keys.forEach(sessionRepository::refreshHost)
+        sessionRepository.refreshSessionLists()
     }
 
     fun newSession(hostId: Long, keyPassphrase: String? = null) {
         viewModelScope.launch {
             val spec = specForHost(hostId, keyPassphrase) ?: return@launch
-            clearActionError(hostId)
+            clearNotice(hostId)
             if (!spec.usesRuntimeMultiplexer) {
                 _openSession.tryEmit(sessionRepository.openTab(spec).id)
                 return@launch
@@ -187,7 +194,7 @@ class ServerListViewModel(
         val remoteName = row.remoteName ?: return
         viewModelScope.launch {
             val spec = specForHost(hostId, keyPassphrase) ?: return@launch
-            clearActionError(hostId)
+            clearNotice(hostId)
             val tab =
                 sessionRepository.openTab(
                     spec.copy(
@@ -220,46 +227,49 @@ class ServerListViewModel(
         host: HostProfile,
         link: HostLink?,
         hostTabs: List<TabSession>,
-        actionError: String?,
+        notice: HostNotice?,
         creating: Boolean,
     ): HostRuntime {
-        if (host.multiplexer == null) {
-            return HostRuntime(
-                linked = hostTabs.isNotEmpty(),
-                error = actionError,
-                rows =
-                    hostTabs.map { tab ->
-                        SessionRow(key = tab.id, localSessionId = tab.id)
-                    },
-            )
-        }
         val status = link?.status ?: HostLinkStatus.Offline
+        val linkError = link?.error?.takeIf { status == HostLinkStatus.Error }
         return HostRuntime(
             linked = status != HostLinkStatus.Offline,
+            online = status == HostLinkStatus.Online,
             loading = status == HostLinkStatus.Connecting,
             creating = creating,
-            error = actionError ?: link?.error.takeIf { status == HostLinkStatus.Error },
+            message = notice?.message ?: linkError,
+            messageIsError = notice?.isError ?: (linkError != null),
             rows =
-                multiplexerSessionRows(
-                    remoteSessions = link?.remoteSessions.orEmpty(),
-                    localSessionIdsByRemoteName =
-                        hostTabs
-                            .mapNotNull { tab ->
-                                tab.spec.multiplexerSessionName?.let { name -> name to tab.id }
-                            }
-                            .toMap(),
-                ),
+                if (host.multiplexer == null) {
+                    // No remote list to read: the rows are the connections this app holds.
+                    hostTabs.map { tab -> SessionRow(key = tab.id, localSessionId = tab.id) }
+                } else {
+                    multiplexerSessionRows(
+                        remoteSessions = link?.remoteSessions.orEmpty(),
+                        localSessionIdsByRemoteName =
+                            hostTabs
+                                .mapNotNull { tab ->
+                                    tab.spec.multiplexerSessionName?.let { name -> name to tab.id }
+                                }
+                                .toMap(),
+                    )
+                },
         )
     }
 
     private fun setActionError(hostId: Long, error: Throwable) {
-        val message = error.message ?: "Failed to create the session"
-        actionErrors.update { it + (hostId to message) }
+        setNotice(hostId, error.message ?: "Failed to create the session", isError = true)
     }
 
-    private fun clearActionError(hostId: Long) {
-        actionErrors.update { it - hostId }
+    private fun clearNotice(hostId: Long) {
+        hostNotices.update { it - hostId }
     }
+
+    private fun setNotice(hostId: Long, message: String, isError: Boolean) {
+        hostNotices.update { it + (hostId to HostNotice(message, isError)) }
+    }
+
+    private data class HostNotice(val message: String, val isError: Boolean)
 
     companion object {
         fun factory(application: Application): ViewModelProvider.Factory =
@@ -275,9 +285,8 @@ class ServerListViewModel(
     }
 }
 
-internal fun shouldAutoConnect(host: HostProfile, requireAuthOnConnect: Boolean): Boolean =
-    host.autoConnect &&
-        host.multiplexer != null &&
+internal fun shouldRestoreLink(host: HostProfile, requireAuthOnConnect: Boolean): Boolean =
+    host.linked &&
         !requireAuthOnConnect &&
         !host.requireAuthOnConnect &&
         (host.authMethod != AuthMethod.KeyWithPassphrase || host.keyPassphrase.isNotBlank())

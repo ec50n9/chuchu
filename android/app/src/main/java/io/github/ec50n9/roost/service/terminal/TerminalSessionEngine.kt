@@ -597,6 +597,32 @@ class TerminalSessionEngine(
             multiplexer.parseSessions(result.stdout)
         }
 
+    /**
+     * Connects and authenticates, then drops the connection again.
+     *
+     * A host with no multiplexer has no session list to prove its credentials against, so its
+     * connect button checks the host itself. Throws when the connection, the auth or the host key
+     * check fails; a successful return means "reachable", nothing more. The preflight engine that
+     * runs this disposes right after, and disposing closes the libssh2 session.
+     */
+    suspend fun verifyConnection(spec: TabSpec) {
+        val params = spec.toConnectionParams()
+        withContext(dispatcher) {
+            check(nativeSsh.isAvailable()) { "Native SSH unavailable. Check ABI/NDK build." }
+            check(params.username.isNotBlank()) { "Username required" }
+            nativeSsh.connect(
+                host = params.host,
+                port = params.port,
+                username = params.username,
+                authMethod = params.authMethod,
+                password = if (params.authMethod == AuthMethod.Password) params.password else "",
+                publicKeyOpenSsh = params.publicKeyOpenSsh,
+                privateKeyPem = params.privateKeyPem,
+                keyPassphrase = params.keyPassphrase,
+            )
+        }
+    }
+
     suspend fun resolveMultiplexerSessionName(
         spec: TabSpec,
         localSessionNames: Collection<String>,

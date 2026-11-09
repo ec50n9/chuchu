@@ -98,7 +98,6 @@
     <string name="add_server_set_passphrase">set passphrase</string>
     <string name="add_server_additional_settings">additional settings</string>
     <string name="add_server_require_biometric">require biometric auth</string>
-    <string name="add_server_auto_connect">connect when the app opens</string>
     <string name="add_server_test_idle">test connection</string>
     <string name="add_server_test_short">test</string>
     <string name="add_server_test_running">testing…</string>
@@ -213,7 +212,7 @@
     <string name="tabs_header">sessions</string>
     <string name="tab_new">+ new</string>
     <string name="session_new">+ new session</string>
-    <string name="session_listing">listing sessions…</string>
+    <string name="session_listing">connecting…</string>
     <string name="session_creating">creating session…</string>
     <string name="session_ended">session ended</string>
     <string name="session_none">no sessions yet</string>

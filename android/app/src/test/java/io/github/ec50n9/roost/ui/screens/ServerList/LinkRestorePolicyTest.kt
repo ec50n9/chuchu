@@ -7,32 +7,34 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class AutoConnectPolicyTest {
+class LinkRestorePolicyTest {
     private val host =
         HostProfile(
             name = "work",
             host = "example.com",
             username = "user",
             multiplexer = MultiplexerType.Tmux,
-            autoConnect = true,
+            linked = true,
         )
 
     @Test
-    fun autoConnectOnlyUsesAnImmediatelyUsableConnection() {
-        assertTrue(shouldAutoConnect(host, requireAuthOnConnect = false))
-        assertFalse(shouldAutoConnect(host, requireAuthOnConnect = true))
+    fun onlyAConnectionThatCanBeMadeSilentlyIsRestored() {
+        assertTrue(shouldRestoreLink(host, requireAuthOnConnect = false))
+        assertFalse(shouldRestoreLink(host, requireAuthOnConnect = true))
         assertFalse(
-            shouldAutoConnect(
+            shouldRestoreLink(
                 host.copy(requireAuthOnConnect = true),
                 requireAuthOnConnect = false,
             )
         )
-        assertFalse(shouldAutoConnect(host.copy(multiplexer = null), requireAuthOnConnect = false))
+        // Both kinds of host restore: a bare SSH link is its connectivity check, not a session.
+        assertTrue(shouldRestoreLink(host.copy(multiplexer = null), requireAuthOnConnect = false))
+        assertFalse(shouldRestoreLink(host.copy(linked = false), requireAuthOnConnect = false))
 
         val encryptedKey = host.copy(authMethod = AuthMethod.KeyWithPassphrase)
-        assertFalse(shouldAutoConnect(encryptedKey, requireAuthOnConnect = false))
+        assertFalse(shouldRestoreLink(encryptedKey, requireAuthOnConnect = false))
         assertTrue(
-            shouldAutoConnect(
+            shouldRestoreLink(
                 encryptedKey.copy(keyPassphrase = "secret"),
                 requireAuthOnConnect = false,
             )

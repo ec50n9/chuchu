@@ -291,24 +291,6 @@ fun AddServerScreen(vm: AddServerViewModel, onBack: () -> Unit, modifier: Modifi
 
             SectionDivider()
             MultiplexerSection(selected = form.multiplexer, onSelect = vm::updateMultiplexer)
-            // Only a multiplexer host has an "attached but idle" state to restore, so the
-            // switch would be a lie on a bare SSH host.
-            if (form.multiplexer != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                ) {
-                    ChuText(
-                        stringResource(R.string.add_server_auto_connect),
-                        style = typography.label,
-                    )
-                    ChuSwitch(
-                        checked = form.autoConnect,
-                        onCheckedChange = vm::updateAutoConnect,
-                    )
-                }
-            }
 
             SectionDivider()
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

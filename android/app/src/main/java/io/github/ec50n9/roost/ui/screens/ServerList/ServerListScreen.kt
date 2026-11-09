@@ -742,14 +742,14 @@ private fun HostCard(
                                 HostSessionRowPlaceholder(stringResource(R.string.session_creating))
                             } else if (runtime.loading) {
                                 HostSessionRowPlaceholder(stringResource(R.string.session_listing))
-                            } else if (runtime.rows.isEmpty() && runtime.error == null) {
+                            } else if (runtime.rows.isEmpty() && runtime.message == null) {
                                 HostSessionRowPlaceholder(stringResource(R.string.session_none))
                             }
-                            runtime.error?.let { message ->
+                            runtime.message?.let { message ->
                                 ChuText(
                                     message,
                                     style = typography.labelSmall,
-                                    color = colors.error,
+                                    color = if (runtime.messageIsError) colors.error else colors.textSecondary,
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 )
                             }
@@ -757,33 +757,38 @@ private fun HostCard(
                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                if (host.multiplexer != null) {
-                                    ChuButton(
-                                        onClick = onRefreshSessions,
-                                        variant = ChuButtonVariant.Ghost,
-                                        bracketed = true,
-                                        borderColor = colors.textMuted,
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    ) {
-                                        ChuText(
-                                            stringResource(R.string.mux_refresh),
-                                            style = typography.labelSmall,
-                                            color = colors.textMuted,
-                                        )
-                                    }
-                                }
+                                // Re-probing is the retry path, so it stays available on a host
+                                // whose last probe failed.
                                 ChuButton(
-                                    onClick = onNewSession,
+                                    onClick = onRefreshSessions,
                                     variant = ChuButtonVariant.Ghost,
                                     bracketed = true,
-                                    borderColor = colors.accent,
+                                    borderColor = colors.textMuted,
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                 ) {
                                     ChuText(
-                                        stringResource(R.string.session_new),
+                                        stringResource(R.string.mux_refresh),
                                         style = typography.labelSmall,
-                                        color = colors.accent,
+                                        color = colors.textMuted,
                                     )
+                                }
+                                // Only a host that answered can take a session. A refresh in
+                                // flight keeps the button: hiding it on every re-probe made it
+                                // blink on each return to this screen.
+                                if (runtime.online || runtime.loading) {
+                                    ChuButton(
+                                        onClick = onNewSession,
+                                        variant = ChuButtonVariant.Ghost,
+                                        bracketed = true,
+                                        borderColor = colors.accent,
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    ) {
+                                        ChuText(
+                                            stringResource(R.string.session_new),
+                                            style = typography.labelSmall,
+                                            color = colors.accent,
+                                        )
+                                    }
                                 }
                             }
                         }

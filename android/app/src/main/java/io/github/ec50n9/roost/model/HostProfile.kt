@@ -25,10 +25,12 @@ data class HostProfile(
     val postConnectCommand: String? = null,
     @ColumnInfo(defaultValue = "NULL")
     val multiplexer: MultiplexerType? = null,
-    // Connect this host (and list its multiplexer sessions) when the server list opens.
-    // Only meaningful with a multiplexer: a bare SSH host has no "connected but idle" state.
+    // The user asked to watch this host: its multiplexer sessions are listed on the server list.
+    // Written on connect, cleared on disconnect, so a restart re-links the hosts that were linked
+    // when the app went away. Only meaningful with a multiplexer: a bare SSH host has no
+    // "connected but idle" state, and restoring it would mean opening a shell nobody asked for.
     @ColumnInfo(defaultValue = "0")
-    val autoConnect: Boolean = false,
+    val linked: Boolean = false,
     // PATH prepended to the multiplexer's exec-channel commands. Exec runs without the account's
     // rc files, so mise/nix/asdf/homebrew shims are not on PATH there and tmux/zmx would report
     // "command not found". Written by the app from a probe of the account's interactive shell, not

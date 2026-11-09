@@ -55,6 +55,11 @@ class TerminalSessionRepository private constructor(application: Application) {
     private val appContext = application.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    // Link writes are fire-and-forget, so two of them could commit out of order: a disconnect that
+    // lands before its connect would leave the row linked and reconnect the host on the next launch.
+    // One worker keeps them in tap order.
+    private val linkWrites = Dispatchers.IO.limitedParallelism(1)
+
     private val hostKeyStore =
         HostKeyStore(appContext.getSharedPreferences(HostKeyStore.PREFS_NAME, Application.MODE_PRIVATE))
     private val tailscaleStatusChecker = TailscaleStatusChecker(appContext)
@@ -286,24 +291,46 @@ class TerminalSessionRepository private constructor(application: Application) {
     private val hostSpecs = ConcurrentHashMap<Long, TabSpec>()
 
     /**
-     * Links a host so its multiplexer sessions can be listed, and returns the session tab when the
-     * host has no multiplexer (there, connecting and having a session are the same act).
+     * Links a host, which is what makes its card show as connected. Both kinds of host get a link;
+     * only the work behind it differs: a multiplexer host reads the remote session list, a bare SSH
+     * host has no list, so it is the connectivity check itself.
      */
-    fun connectHost(spec: TabSpec): TabSession? {
-        val hostId = spec.hostId ?: return null
-        if (!spec.usesRuntimeMultiplexer) return openTab(spec)
+    fun connectHost(spec: TabSpec) {
+        val hostId = spec.hostId ?: return
         hostSpecs[hostId] = spec
         _hostLinks.update { links ->
             links + (hostId to HostLink(status = HostLinkStatus.Connecting))
         }
-        launchHostSessionList(hostId, spec)
-        return null
+        // The link is what the user asked to keep watching, so it survives the app and is restored
+        // on the next launch. Bounded by disconnectHost, which forgets it again.
+        setLinked(hostId, true)
+        launchHostProbe(hostId, spec)
+    }
+
+    /** Connects, authenticates and drops the connection: the whole link of a host with no list. */
+    suspend fun verifyHostConnection(spec: TabSpec) =
+        withPreflightEngine { engine -> engine.verifyConnection(spec) }
+
+    private fun setLinked(hostId: Long, linked: Boolean) {
+        scope.launch(linkWrites) { hostRepository.updateLinked(hostId, linked) }
+    }
+
+    /**
+     * Re-reads the session list of every multiplexer host linked in this process.
+     *
+     * A bare host has no list to go stale, and re-checking it here would authenticate against it
+     * again on every return to the server list, serialized behind the preflight mutex. Its card
+     * still has "refresh" as the retry path.
+     */
+    fun refreshSessionLists() {
+        hostSpecs.forEach { (hostId, spec) ->
+            if (spec.usesRuntimeMultiplexer) refreshHost(hostId)
+        }
     }
 
     fun refreshHost(hostId: Long) {
         val spec = hostSpecs[hostId] ?: return
-        if (!spec.usesRuntimeMultiplexer) return
-        // A probe already in flight wins; concurrent listings would just race each other.
+        // A probe already in flight wins; concurrent probes would just race each other.
         if (_hostLinks.value[hostId]?.status == HostLinkStatus.Connecting) return
         _hostLinks.update { links ->
             // Keep the last known list visible while refreshing; only the probe result replaces it.
@@ -315,13 +342,44 @@ class TerminalSessionRepository private constructor(application: Application) {
                         remoteSessions = previous?.remoteSessions.orEmpty(),
                     ))
         }
-        launchHostSessionList(hostId, spec)
+        launchHostProbe(hostId, spec)
+    }
+
+    private fun launchHostProbe(hostId: Long, spec: TabSpec) {
+        if (spec.usesRuntimeMultiplexer) {
+            launchHostSessionList(hostId, spec)
+        } else {
+            launchHostCheck(hostId, spec)
+        }
+    }
+
+    private fun launchHostCheck(hostId: Long, spec: TabSpec) {
+        scope.launch {
+            val checked = runCatching { verifyHostConnection(spec) }
+            _hostLinks.update { links ->
+                // A disconnect during the check must win over its late answer.
+                if (!hostSpecs.containsKey(hostId)) return@update links
+                links + (
+                    hostId to
+                        checked.fold(
+                            onSuccess = { HostLink(HostLinkStatus.Online) },
+                            onFailure = { error ->
+                                HostLink(
+                                    status = HostLinkStatus.Error,
+                                    error = error.message ?: "Failed to reach the host",
+                                )
+                            },
+                        )
+                )
+            }
+        }
     }
 
     fun disconnectHost(hostId: Long) {
         tabsForHost(hostId).forEach { closeTab(it.id) }
         hostSpecs.remove(hostId)
         _hostLinks.update { links -> links - hostId }
+        setLinked(hostId, false)
     }
 
     private fun launchHostSessionList(hostId: Long, spec: TabSpec) {
@@ -564,6 +622,11 @@ class TerminalSessionRepository private constructor(application: Application) {
         _tabs.value = emptyList()
         _activeTabId.value = null
         tabs.forEach { it.engine.dispose() }
+        // "Disconnect" from the notification is the user saying they are done watching every host,
+        // so the restored links go with it. Otherwise the next launch would quietly reconnect them.
+        hostSpecs.clear()
+        _hostLinks.update { emptyMap() }
+        scope.launch(linkWrites) { hostRepository.clearAllLinked() }
     }
 
     private fun activeEngine(): TerminalSessionEngine? = activeTab.value?.engine

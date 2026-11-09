@@ -71,7 +71,55 @@ class ServerListScreenTest {
         composeRule.onRoot().captureRoboImage("build/outputs/roborazzi/server-list-duplicate-names.png")
     }
 
-    private fun render(hosts: List<HostProfile>) {
+    @Test
+    fun aBareHostOnlyOffersANewSessionOnceItsCheckCameBack() {
+        val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
+        render(hosts = listOf(bare), runtime = mapOf(1L to HostRuntime(linked = true, online = true)))
+
+        composeRule.onNodeWithText("+ new session").assertIsDisplayed()
+    }
+
+    @Test
+    fun aFailedCheckShowsWhyAndOffersNoNewSession() {
+        val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
+        render(
+            hosts = listOf(bare),
+            runtime =
+                mapOf(
+                    1L to
+                        HostRuntime(
+                            linked = true,
+                            message = "Connection refused",
+                            messageIsError = true,
+                        )
+                ),
+        )
+
+        composeRule.onNodeWithText("Connection refused").assertIsDisplayed()
+        composeRule.onNodeWithText("+ new session").assertDoesNotExist()
+    }
+
+    @Test
+    fun aRefreshInFlightKeepsTheNewSessionButton() {
+        val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
+        render(
+            hosts = listOf(bare),
+            runtime = mapOf(1L to HostRuntime(linked = true, loading = true)),
+        )
+
+        composeRule.onNodeWithText("+ new session").assertIsDisplayed()
+    }
+
+    @Test
+    fun anUnlinkedHostHasNoSessionControlsAtAll() {
+        val bare = HostProfile(id = 1, name = "plain server", host = "192.0.2.10", username = "admin")
+        render(hosts = listOf(bare))
+
+        composeRule.onNodeWithText("+ new session").assertDoesNotExist()
+        composeRule.onNodeWithText("no sessions yet").assertDoesNotExist()
+    }
+
+    private fun render(hosts: List<HostProfile>, runtime: Map<Long, HostRuntime> = emptyMap()) {
         val context = ApplicationProvider.getApplicationContext<Application>()
         GhosttyThemeRegistry.init(context)
 
@@ -79,7 +127,7 @@ class ServerListScreenTest {
             ChuTheme(themeName = "Catppuccin Mocha") {
                 ServerListScreen(
                     hosts = hosts,
-                    hostRuntime = emptyMap(),
+                    hostRuntime = runtime,
                     hostKeyPrompt = null,
                     onHostKeyDecision = {},
                     searchQuery = "",

@@ -33,7 +33,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migrate13To14ConvertsMoshWithoutChangingOtherHosts() = runBlocking {
+    fun migrateFromV13KeepsHostsAndRenamesTheLinkFlag() = runBlocking {
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(TEST_DB), null).apply {
             execSQL(CREATE_HOST_PROFILES_V13)
             execSQL(CREATE_HOST_NAME_INDEX_V13)
@@ -66,7 +66,7 @@ class AppDatabaseMigrationTest {
                     requireAuthOnConnect = true,
                     postConnectCommand = "echo hello",
                     multiplexer = MultiplexerType.Tmux,
-                    autoConnect = true,
+                    linked = true,
                     remotePath = "/opt/zmx",
                 ),
                 HostProfile(

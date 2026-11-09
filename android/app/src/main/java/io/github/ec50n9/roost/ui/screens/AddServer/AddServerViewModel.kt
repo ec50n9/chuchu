@@ -91,7 +91,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                         requireAuthOnConnect = profile.requireAuthOnConnect,
                         postConnectCommand = profile.postConnectCommand.orEmpty(),
                         multiplexer = profile.multiplexer,
-                        autoConnect = profile.autoConnect,
+                        linked = profile.linked,
                         remotePath = profile.remotePath.orEmpty(),
                     )
             }
@@ -200,10 +200,6 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
         _form.value = _form.value.copy(requireAuthOnConnect = enabled)
     }
 
-    fun updateAutoConnect(enabled: Boolean) {
-        _form.value = _form.value.copy(autoConnect = enabled)
-    }
-
     fun updatePostConnectCommand(command: String) {
         _form.value = _form.value.copy(postConnectCommand = command)
     }
@@ -211,13 +207,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
     fun updateMultiplexer(multiplexer: MultiplexerType?) {
         val current = _form.value
         val selected = multiplexer?.takeIf { it.runtimeSupported }
-        _form.value =
-            current.copy(
-                multiplexer = selected,
-                // Auto-connect has nothing to link without a multiplexer, and the switch is
-                // hidden then, so drop it rather than keep an invisible true.
-                autoConnect = current.autoConnect && selected != null,
-            )
+        _form.value = current.copy(multiplexer = selected)
     }
 
     fun testConnection() {
@@ -318,7 +308,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                     requireAuthOnConnect = current.requireAuthOnConnect,
                     postConnectCommand = current.postConnectCommand.trim().ifBlank { null },
                     multiplexer = current.multiplexer.takeIf { it?.runtimeSupported == true },
-                    autoConnect = current.autoConnect && current.multiplexer != null,
+                    linked = current.linked,
                     remotePath = current.remotePath.trim().ifBlank { null },
                 )
             hostRepository.upsert(profile)
@@ -343,7 +333,9 @@ data class AddServerForm(
     val requireAuthOnConnect: Boolean = false,
     val postConnectCommand: String = "",
     val multiplexer: MultiplexerType? = null,
-    val autoConnect: Boolean = false,
+    // Not editable: connecting and disconnecting set it on the host row itself. The form still
+    // carries it so saving an edited host does not silently unlink it.
+    val linked: Boolean = false,
     // Not editable: the app probes the remote PATH and stores it in the host row. The form still
     // carries it so saving an edited host does not wipe what the probe found.
     val remotePath: String = "",

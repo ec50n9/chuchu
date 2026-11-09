@@ -94,7 +94,6 @@
     <string name="add_server_set_passphrase">设置口令</string>
     <string name="add_server_additional_settings">更多设置</string>
     <string name="add_server_require_biometric">连接前需要生物识别</string>
-    <string name="add_server_auto_connect">打开 App 时自动连接</string>
     <string name="add_server_test_idle">测试连接</string>
     <string name="add_server_test_short">测试</string>
     <string name="add_server_test_running">测试中…</string>
@@ -202,7 +201,7 @@
     <!-- Tabs -->
     <string name="tabs_header">会话</string>
     <string name="session_new">+ 新建会话</string>
-    <string name="session_listing">正在列出会话…</string>
+    <string name="session_listing">正在连接…</string>
     <string name="session_creating">正在创建会话…</string>
     <string name="session_ended">会话已结束</string>
     <string name="session_none">还没有会话</string>

@@ -30,6 +30,15 @@ interface HostProfileDao {
     @Query("UPDATE host_profiles SET remotePath = :path WHERE id = :id")
     suspend fun updateRemotePath(id: Long, path: String)
 
+    // Also a targeted write: connecting is not a form edit, so it must not carry a half-edited row.
+    // The `linked != :linked` guard keeps a re-link of an already linked host from re-emitting the
+    // host list, which would restart the restore pass that issued it.
+    @Query("UPDATE host_profiles SET linked = :linked WHERE id = :id AND linked != :linked")
+    suspend fun updateLinked(id: Long, linked: Boolean): Int
+
+    @Query("UPDATE host_profiles SET linked = 0 WHERE linked != 0")
+    suspend fun clearAllLinked()
+
     @Query("UPDATE host_profiles SET keyId = NULL, keyPassphrase = '' WHERE keyId = :keyId")
     suspend fun clearKeyReference(keyId: Long)
 

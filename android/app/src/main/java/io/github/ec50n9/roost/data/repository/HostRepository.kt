@@ -20,4 +20,8 @@ class HostRepository(private val dao: HostProfileDao) {
     suspend fun clearKeyReference(keyId: Long) = dao.clearKeyReference(keyId)
 
     suspend fun updateRemotePath(id: Long, path: String) = dao.updateRemotePath(id, path)
+
+    suspend fun updateLinked(id: Long, linked: Boolean) = dao.updateLinked(id, linked)
+
+    suspend fun clearAllLinked() = dao.clearAllLinked()
 }
