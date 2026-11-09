@@ -5,7 +5,8 @@ import io.github.ec50n9.roost.model.MultiplexerType
 object ZmxMultiplexer : Multiplexer {
     override val type: MultiplexerType = MultiplexerType.Zmx
 
-    override fun availabilityCommand(): String = "command -v zmx >/dev/null 2>&1"
+    override fun availabilityCommand(): String =
+        "if ! command -v zmx >/dev/null 2>&1; then printf '$missingExecutableText\\n' >&2; false; fi"
 
     override fun listSessionsCommand(): String =
         "if ! command -v zmx >/dev/null 2>&1; then printf 'zmx executable not found\\n' >&2; false; " +

@@ -3,6 +3,8 @@ package io.github.ec50n9.roost.service.terminal
 import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
+import io.github.ec50n9.roost.data.db.AppDatabase
+import io.github.ec50n9.roost.data.repository.HostRepository
 import io.github.ec50n9.roost.data.repository.SettingsRepository
 import io.github.ec50n9.roost.model.MultiplexerType
 import io.github.ec50n9.roost.model.Transport
@@ -58,6 +60,22 @@ class TerminalSessionRepository private constructor(application: Application) {
     private val tailscaleStatusChecker = TailscaleStatusChecker(appContext)
     private val clipboard = appContext.getSystemService(ClipboardManager::class.java)
     private val settingsRepository = SettingsRepository.getInstance(appContext)
+    private val hostRepository = HostRepository(AppDatabase.getInstance(appContext).hostProfileDao())
+
+    // PATHs learned by probing. Shared by every engine so one probe serves them all, and backed by
+    // the host row so it also survives the app.
+    private val remotePaths = ConcurrentHashMap<Long, String>()
+
+    private suspend fun loadRemotePath(hostId: Long): String? =
+        remotePaths[hostId] ?: hostRepository.getById(hostId)?.remotePath?.also { remotePaths[hostId] = it }
+
+    private suspend fun storeRemotePath(hostId: Long, path: String) {
+        remotePaths[hostId] = path
+        // The probe is only persisted when it produced a working PATH, so this write is a repair,
+        // not a guess. Skipping the unchanged case keeps list refreshes from rewriting the row.
+        if (hostRepository.getById(hostId)?.remotePath == path) return
+        hostRepository.updateRemotePath(hostId, path)
+    }
 
     private fun publishTerminalClipboard(tabId: String, text: String) {
         if (!canPublishTerminalClipboard(tabId)) return
@@ -401,6 +419,8 @@ class TerminalSessionRepository private constructor(application: Application) {
                 },
                 // Nothing renders a probe: listing sessions only needs the command output.
                 hasAttachedClient = { false },
+                loadRemotePath = ::loadRemotePath,
+                storeRemotePath = ::storeRemotePath,
             )
         preflightEngine = engine
         return try {
@@ -448,6 +468,8 @@ class TerminalSessionRepository private constructor(application: Application) {
                 tailscaleStatusChecker,
                 holdRepaintFrames = { settingsRepository.holdRepaintFrames.value },
                 hasAttachedClient = { attachedClients > 0 },
+                loadRemotePath = ::loadRemotePath,
+                storeRemotePath = ::storeRemotePath,
             )
         val tab = TabSession(id, spec, engine)
         _tabs.value = _tabs.value + tab
@@ -468,6 +490,7 @@ class TerminalSessionRepository private constructor(application: Application) {
             multiplexerSessionName = spec.multiplexerSessionName,
             multiplexerCreateIfMissing = spec.multiplexerCreateIfMissing,
             remotePath = spec.remotePath,
+            hostId = spec.hostId,
         )
         return tab
     }
@@ -526,6 +549,7 @@ class TerminalSessionRepository private constructor(application: Application) {
             multiplexerSessionName = spec.multiplexerSessionName,
             multiplexerCreateIfMissing = spec.multiplexerCreateIfMissing,
             remotePath = spec.remotePath,
+            hostId = spec.hostId,
         )
     }
 

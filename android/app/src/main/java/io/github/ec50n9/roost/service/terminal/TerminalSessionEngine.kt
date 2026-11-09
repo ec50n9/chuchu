@@ -6,6 +6,7 @@ import android.util.Log
 import io.github.ec50n9.roost.model.AuthMethod
 import io.github.ec50n9.roost.model.MultiplexerType
 import io.github.ec50n9.roost.model.Transport
+import io.github.ec50n9.roost.service.multiplexer.Multiplexer
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerAvailability
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerCommandResult
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerRegistry
@@ -77,8 +78,14 @@ class TerminalSessionEngine(
     // page there is nobody to read the frames, and serialising them still burns CPU. The native
     // terminal keeps consuming output either way, so re-attaching just paints the current state.
     private val hasAttachedClient: () -> Boolean = { true },
+    // Reads the PATH stored for a host, so a probe result survives the app and every engine.
+    private val loadRemotePath: suspend (hostId: Long) -> String? = { null },
+    // Writes a fresh probe result back. Engines are per-session, so this is the only way the next
+    // one (or the next app launch) skips the probe.
+    private val storeRemotePath: suspend (hostId: Long, path: String) -> Unit = { _, _ -> },
 ) {
     private data class ConnectionParams(
+        val hostId: Long? = null,
         val host: String,
         val port: Int,
         val username: String,
@@ -94,13 +101,13 @@ class TerminalSessionEngine(
         val multiplexerCreateIfMissing: Boolean = true,
         val remotePath: String? = null,
     ) {
-        fun multiplexerStartupCommand(): String? {
+        fun multiplexerStartupCommand(path: String?): String? {
             val type = multiplexer ?: return null
             if (!type.runtimeSupported || transport == Transport.LocalShell) return null
             val sessionName = multiplexerSessionName?.takeIf { it.isNotBlank() } ?: return null
             val runtime = MultiplexerRegistry.forType(type) ?: return null
             return RemotePath.apply(
-                remotePath,
+                path,
                 type.id,
                 runtime.launchCommand(
                     sessionName = sessionName,
@@ -122,6 +129,10 @@ class TerminalSessionEngine(
 
     private val bridge = GhosttyBridge()
     private val nativeSsh = NativeSshService(hostKeyPolicy = ::verifyHostKey)
+
+    // What a PATH probe discovered during this engine's life. The profile row is the long-term
+    // store; this map only spares a second probe before the row makes it back through a refresh.
+    private val resolvedRemotePaths = ConcurrentHashMap<Long, String>()
 
     private var handle: Long = 0L
     private var readJob: Job? = null
@@ -184,10 +195,12 @@ class TerminalSessionEngine(
         multiplexerSessionName: String? = null,
         multiplexerCreateIfMissing: Boolean = true,
         remotePath: String? = null,
+        hostId: Long? = null,
     ) {
         disconnectRequested = false
         val params =
             ConnectionParams(
+                hostId = hostId,
                 host = host,
                 port = port,
                 username = username,
@@ -533,10 +546,7 @@ class TerminalSessionEngine(
         }
         return runCatching {
             val result =
-                runMultiplexerCommand(
-                    params,
-                    RemotePath.apply(params.remotePath, multiplexer.type.id, multiplexer.availabilityCommand()),
-                )
+                runMultiplexerCommand(params, multiplexer, multiplexer.availabilityCommand())
             if (result.isSuccess) {
                 MultiplexerAvailability.Available
             } else {
@@ -574,7 +584,8 @@ class TerminalSessionEngine(
             val result =
                 runMultiplexerCommand(
                     spec.toConnectionParams(),
-                    RemotePath.apply(spec.remotePath, multiplexer.type.id, multiplexer.listSessionsCommand()),
+                    multiplexer,
+                    multiplexer.listSessionsCommand(),
                 )
             if (!result.isSuccess) {
                 // The command reports *why* on stdout ("tmux executable not found"), so surface
@@ -836,7 +847,11 @@ class TerminalSessionEngine(
             keyPassphrase = params.keyPassphrase,
         )
         val term = resolveTerminalType(params, username)
-        val startupCommand = params.multiplexerStartupCommand()?.trim().orEmpty()
+        // shortcut: a deep link straight into an attached session never listed sessions, so nothing
+        // has probed this host yet. It still gets the profile's PATH below, and the next list pass
+        // repairs it; add a pre-flight probe here only if that shows up in practice.
+        primeRemotePath(params)
+        val startupCommand = params.multiplexerStartupCommand(currentRemotePath(params))?.trim().orEmpty()
         if (startupCommand.isNotEmpty()) {
             nativeSsh.openExecPty(startupCommand, cols, rows, ptyWidthPx(), ptyHeightPx(), term)
         } else {
@@ -892,6 +907,7 @@ class TerminalSessionEngine(
     }
 
     private fun TabSpec.toConnectionParams(): ConnectionParams = ConnectionParams(
+        hostId = hostId,
         host = host,
         port = port,
         username = username,
@@ -908,8 +924,21 @@ class TerminalSessionEngine(
         remotePath = remotePath,
     )
 
+    /**
+     * Runs one multiplexer command, and repairs the host's PATH when the executable is missing.
+     *
+     * Exec channels do not read the account's rc files, so a tmux installed by mise / homebrew is
+     * invisible there while it works fine in the user's own shell. When the remote says
+     * [Multiplexer.missingExecutableText], the interactive shell is asked for its PATH on the same
+     * connection and the command is retried once with it; a working answer is stored on the host so
+     * no later session (or app launch) pays for the probe again.
+     *
+     * Only "executable not found" triggers this. Anything else ("no server running", a permission
+     * error) means the multiplexer was found, and re-probing would burn a round trip for nothing.
+     */
     private fun runMultiplexerCommand(
         params: ConnectionParams,
+        multiplexer: Multiplexer,
         command: String,
         timeoutMs: Long = 20_000,
     ): MultiplexerCommandResult {
@@ -925,11 +954,79 @@ class TerminalSessionEngine(
                 privateKeyPem = params.privateKeyPem,
                 keyPassphrase = params.keyPassphrase,
             )
-            if (!service.openExec(withExitEnvelope(command))) {
-                return MultiplexerCommandResult(1, "", "Remote server did not open an exec channel")
-            }
-            return readExecOutput(service, timeoutMs)
+            primeRemotePath(params)
+            val first = execMultiplexerCommand(service, currentRemotePath(params), multiplexer, command, timeoutMs)
+            if (first.isSuccess || !first.reportsMissing(multiplexer)) return first
+
+            Log.i(LOG_TAG, "${multiplexer.type.id} missing on PATH: ${first.describe()}")
+            val probed = probeRemotePath(service) ?: return first
+            val retried = execMultiplexerCommand(service, probed, multiplexer, command, timeoutMs)
+            Log.i(LOG_TAG, "${multiplexer.type.id} retried with probed PATH: ${retried.describe()}")
+            if (retried.isSuccess) rememberRemotePath(params, probed)
+            return retried
         }
+    }
+
+    private fun execMultiplexerCommand(
+        service: NativeSshService,
+        path: String?,
+        multiplexer: Multiplexer,
+        command: String,
+        timeoutMs: Long,
+    ): MultiplexerCommandResult {
+        val prepared = RemotePath.apply(path, multiplexer.type.id, command)
+        if (!service.openExec(withExitEnvelope(prepared))) {
+            return MultiplexerCommandResult(1, "", "Remote server did not open an exec channel")
+        }
+        return readExecOutput(service, timeoutMs)
+    }
+
+    private fun MultiplexerCommandResult.reportsMissing(multiplexer: Multiplexer): Boolean =
+        !isSuccess && output.contains(multiplexer.missingExecutableText)
+
+    private fun MultiplexerCommandResult.describe(): String =
+        "exit=$exitCode out=${output.take(240).replace("\n", "\\n")}"
+
+
+    /**
+     * Asks the account's interactive shell for its PATH. Short timeout on purpose: a heavy rc file
+     * (or one that waits for input) must not hold up the server list, and the probe is a one-off.
+     */
+    private fun probeRemotePath(service: NativeSshService): String? {
+        val startedAtMs = System.currentTimeMillis()
+        if (!service.openExec(withExitEnvelope(RemotePath.probeCommand()))) return null
+        val result = readExecOutput(service, PROBE_TIMEOUT_MS)
+        val path = RemotePath.parseProbeOutput(result.stdout)
+        Log.i(
+            LOG_TAG,
+            "PATH probe took ${System.currentTimeMillis() - startedAtMs}ms: ${path ?: "no usable answer"}",
+        )
+        return path
+    }
+
+    /**
+     * Pulls a stored PATH into this engine before it is needed. Engines are per session and the
+     * profile is the only shared store, so a session opened before the probe would otherwise look
+     * at the value its [TabSpec] captured back then. Blocking is fine: this runs on the terminal
+     * thread that already waits on exec output, and Room answers on its own executor.
+     */
+    private fun primeRemotePath(params: ConnectionParams) {
+        val hostId = params.hostId ?: return
+        if (resolvedRemotePaths.containsKey(hostId)) return
+        runBlocking { loadRemotePath(hostId) }?.let { resolvedRemotePaths[hostId] = it }
+    }
+
+    /** The PATH to use for this host right now: what this engine learned, else what its profile has. */
+    private fun currentRemotePath(params: ConnectionParams): String? {
+        val hostId = params.hostId
+        if (hostId != null) resolvedRemotePaths[hostId]?.let { return it }
+        return params.remotePath
+    }
+
+    private fun rememberRemotePath(params: ConnectionParams, path: String) {
+        val hostId = params.hostId ?: return
+        resolvedRemotePaths[hostId] = path
+        scope.launch { storeRemotePath(hostId, path) }
     }
 
     private fun withExitEnvelope(command: String): String =
@@ -952,18 +1049,6 @@ class TerminalSessionEngine(
             }
         }
         return MultiplexerCommandResult(124, output.toString(), "Command timed out")
-    }
-
-    private fun parseCommandEnvelope(output: String): MultiplexerCommandResult {
-        val marker = Regex("(?:^|\\n)CHUCHU_EXIT:(\\d+)\\s*$").find(output)
-            ?: return MultiplexerCommandResult(
-                exitCode = 125,
-                stdout = output,
-                stderr = "Missing command exit marker",
-            )
-        val exitCode = marker.groupValues.getOrNull(1)?.toIntOrNull() ?: 125
-        val cleanOutput = output.substring(0, marker.range.first).trimEnd()
-        return MultiplexerCommandResult(exitCode = exitCode, stdout = cleanOutput, stderr = "")
     }
 
     private fun scheduleReconnect(reason: String) {
@@ -1133,7 +1218,15 @@ class TerminalSessionEngine(
         // Lines of history kept per session. 2000 rows is roughly 2.5 MB of cells, which is what a
         // phone can hold for a few sessions at once; the snapshot only carries the viewport, so this
         // does not make painting more expensive.
+        // Log.i, not Log.d: the release build strips d(), and these lines are what to ask for
+        // when a host will not list its sessions.
+        private const val LOG_TAG = "TerminalSession"
+
         private const val SCROLLBACK_LINES = 2000
+
+        // One interactive shell start. Measured at ~300 ms against a zsh with mise + linuxbrew; the
+        // ceiling is for an rc file that blocks on input, not for slower machines.
+        private const val PROBE_TIMEOUT_MS = 4_000L
 
         private const val ACTIVE_WINDOW_MS = 50L
         private const val NEAR_IDLE_WINDOW_MS = 500L
@@ -1280,5 +1373,21 @@ class TerminalSessionEngine(
             Log.e("TerminalSession", "emitSnapshot failed", e)
         }
     }
-
 }
+
+internal fun parseCommandEnvelope(output: String): MultiplexerCommandResult {
+    // The marker is printed last, but a command that writes to stderr can have that text arrive
+    // after it on the merged channel, so the marker is searched for rather than required at the
+    // very end. Everything else the remote said is kept: it is the message the user gets.
+    val marker = exitMarkerRegex.findAll(output).lastOrNull()
+        ?: return MultiplexerCommandResult(
+            exitCode = 125,
+            stdout = output,
+            stderr = "Missing command exit marker",
+        )
+    val exitCode = marker.groupValues.getOrNull(1)?.toIntOrNull() ?: 125
+    val cleanOutput = output.removeRange(marker.range).trim()
+    return MultiplexerCommandResult(exitCode = exitCode, stdout = cleanOutput, stderr = "")
+}
+
+private val exitMarkerRegex = Regex("CHUCHU_EXIT:(\\d+)")

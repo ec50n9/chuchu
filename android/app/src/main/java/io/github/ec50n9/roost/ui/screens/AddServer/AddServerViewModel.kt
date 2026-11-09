@@ -193,10 +193,6 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
         _form.value = _form.value.copy(autoConnect = enabled)
     }
 
-    fun updateRemotePath(path: String) {
-        _form.value = _form.value.copy(remotePath = path)
-    }
-
     fun updatePostConnectCommand(command: String) {
         _form.value = _form.value.copy(postConnectCommand = command)
     }
@@ -345,6 +341,8 @@ data class AddServerForm(
     val postConnectCommand: String = "",
     val multiplexer: MultiplexerType? = null,
     val autoConnect: Boolean = false,
+    // Not editable: the app probes the remote PATH and stores it in the host row. The form still
+    // carries it so saving an edited host does not wipe what the probe found.
     val remotePath: String = "",
 )
 

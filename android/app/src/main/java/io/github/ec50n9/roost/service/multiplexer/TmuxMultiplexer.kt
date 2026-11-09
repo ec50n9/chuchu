@@ -8,7 +8,8 @@ object TmuxMultiplexer : Multiplexer {
 
     override val type: MultiplexerType = MultiplexerType.Tmux
 
-    override fun availabilityCommand(): String = "command -v tmux >/dev/null 2>&1"
+    override fun availabilityCommand(): String =
+        "if ! command -v tmux >/dev/null 2>&1; then printf '$missingExecutableText\\n' >&2; false; fi"
 
     override fun listSessionsCommand(): String =
         // Do not name this variable `status`: in zsh `status` is a read-only alias

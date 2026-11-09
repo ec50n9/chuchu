@@ -320,20 +320,6 @@ fun AddServerScreen(vm: AddServerViewModel, onBack: () -> Unit, modifier: Modifi
                         onCheckedChange = vm::updateAutoConnect,
                     )
                 }
-                ChuTextField(
-                    value = form.remotePath,
-                    onValueChange = vm::updateRemotePath,
-                    label = stringResource(R.string.add_server_remote_path),
-                    placeholder = stringResource(R.string.add_server_remote_path_placeholder),
-                    singleLine = true,
-                    autoFocus = false,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                ChuText(
-                    stringResource(R.string.add_server_remote_path_hint),
-                    style = typography.bodySmall,
-                    color = colors.textMuted,
-                )
             }
             SectionDivider()
             PostConnectActionSection(

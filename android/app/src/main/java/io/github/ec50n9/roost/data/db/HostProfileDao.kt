@@ -25,6 +25,11 @@ interface HostProfileDao {
 
     @Delete suspend fun delete(profile: HostProfile)
 
+    // Targeted write: a probe result must not overwrite a name or auth change the user is making
+    // in the same moment, which a full-row REPLACE through @Update would.
+    @Query("UPDATE host_profiles SET remotePath = :path WHERE id = :id")
+    suspend fun updateRemotePath(id: Long, path: String)
+
     @Query("UPDATE host_profiles SET keyId = NULL, keyPassphrase = '' WHERE keyId = :keyId")
     suspend fun clearKeyReference(keyId: Long)
 

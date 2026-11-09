@@ -1,6 +1,7 @@
 package io.github.ec50n9.roost.service.multiplexer
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ZmxMultiplexerTest {
@@ -81,5 +82,13 @@ class ZmxMultiplexerTest {
             ),
             sessions,
         )
+    }
+
+    @Test
+    fun missingExecutableTextMatchesWhatTheRemotePrints() {
+        // Both entry points must trigger the same PATH-repair retry when the executable is absent.
+        assertTrue(ZmxMultiplexer.availabilityCommand().contains(ZmxMultiplexer.missingExecutableText))
+        assertTrue(ZmxMultiplexer.listSessionsCommand().contains(ZmxMultiplexer.missingExecutableText))
+        assertEquals("zmx executable not found", ZmxMultiplexer.missingExecutableText)
     }
 }

@@ -1,6 +1,9 @@
 package io.github.ec50n9.roost.service.multiplexer
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RemotePathTest {
@@ -56,5 +59,55 @@ class RemotePathTest {
             "export PATH='/tmp/a'\\''b':\"\$PATH\"; true",
             RemotePath.apply("/tmp/a'b", "zmx", "true"),
         )
+    }
+
+    @Test
+    fun probeAsksAnInteractiveShellBecauseThatIsWhatBuildsTheUsersPath() {
+        val command = RemotePath.probeCommand()
+        assertTrue(command.contains("-ic"))
+        assertTrue(command.contains("\$PATH"))
+        assertTrue(command.contains("\$HOME"))
+        // A login shell only sources the profile; mise/homebrew PATH lines live in the rc file.
+        assertFalse(command.contains("-lc"))
+    }
+
+    @Test
+    fun readsThePathAnInteractiveShellReports() {
+        assertEquals(
+            "/home/u/.local/share/mise/shims:/usr/bin",
+            RemotePath.parseProbeOutput("\u0001/home/u/.local/share/mise/shims:/usr/bin\u0001/home/u\u0002"),
+        )
+    }
+
+    @Test
+    fun keepsTheAnswerAndDropsTheBannerAroundIt() {
+        // A heavy prompt prints to stdout before the markers run.
+        assertEquals(
+            "/opt/bin:/usr/bin",
+            RemotePath.parseProbeOutput(
+                "Last login: Mon Nov  9 02:41:10 2026\r\nzsh: no job control in this shell\n" +
+                    "\u0001/opt/bin:/usr/bin\u0001/home/u\u0002\n",
+            ),
+        )
+    }
+
+    @Test
+    fun expandsTildeBecauseTheRemoteNeverDoes() {
+        // Measured on a real host: the interactive PATH contains an unexpanded "~" entry.
+        assertEquals(
+            "/home/u/.local/bin:/home/u/.local/kitty.app/bin:/usr/bin",
+            RemotePath.parseProbeOutput(
+                "\u0001/home/u/.local/bin:~/.local/kitty.app/bin:/usr/bin\u0001/home/u\u0002",
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsAnswersThatAreNotAUsablePath() {
+        assertNull(RemotePath.parseProbeOutput(""))
+        assertNull(RemotePath.parseProbeOutput("zsh: no job control in this shell\n"))
+        assertNull(RemotePath.parseProbeOutput("\u0001\u0001/home/u\u0002"))
+        assertNull(RemotePath.parseProbeOutput("\u0001one\ntwo\u0001/home/u\u0002"))
+        assertNull(RemotePath.parseProbeOutput("\u0001relative/path\u0001/home/u\u0002"))
     }
 }

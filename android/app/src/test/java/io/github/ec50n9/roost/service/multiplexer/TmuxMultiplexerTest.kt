@@ -1,6 +1,7 @@
 package io.github.ec50n9.roost.service.multiplexer
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TmuxMultiplexerTest {
@@ -140,5 +141,13 @@ class TmuxMultiplexerTest {
             listOf(RemoteMultiplexerSession(name = "chuchu-1", attached = false)),
             sessions,
         )
+    }
+
+    @Test
+    fun missingExecutableTextMatchesWhatTheRemotePrints() {
+        // Both entry points must trigger the same PATH-repair retry when the executable is absent.
+        assertTrue(TmuxMultiplexer.availabilityCommand().contains(TmuxMultiplexer.missingExecutableText))
+        assertTrue(TmuxMultiplexer.listSessionsCommand().contains(TmuxMultiplexer.missingExecutableText))
+        assertEquals("tmux executable not found", TmuxMultiplexer.missingExecutableText)
     }
 }
