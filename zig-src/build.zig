@@ -110,11 +110,6 @@ fn buildNativeLibrary(
         .target = target,
         .optimize = optimize,
     });
-    const mosh_dep = b.dependency("mosh", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
     const android_target = ndk.getAndroidTriple(target.result) catch {
         std.debug.panic("target must be Android", .{});
     };
@@ -170,8 +165,6 @@ fn buildNativeLibrary(
     root_module.addImport("c", translateBridgeHeaders(b, target, optimize, libc_config, libssh2_upstream.path("include")));
     root_module.addImport("ghostty-vt", ghostty_dep.module("ghostty-vt"));
     root_module.addImport("zigimg", zigimg_dep.module("zigimg"));
-
-    root_module.addImport("mosh", mosh_dep.module("mosh"));
 
     const lib = b.addLibrary(.{
         .linkage = .dynamic,

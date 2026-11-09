@@ -49,7 +49,6 @@ data class TabSpec(
     val usesRuntimeMultiplexer: Boolean
         get() =
             multiplexer?.runtimeSupported == true &&
-                transport != Transport.Mosh &&
                 transport != Transport.LocalShell
 
     companion object {
@@ -74,7 +73,6 @@ data class TabSpec(
             remotePath = host.remotePath,
             multiplexer = host.multiplexer?.takeIf {
                 it.runtimeSupported &&
-                    host.transport != Transport.Mosh &&
                     host.transport != Transport.LocalShell
             },
         )

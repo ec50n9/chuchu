@@ -180,8 +180,7 @@ class ChuchuBackupCoreTest {
         val payload = samplePayload().copy(
             hosts = listOf(BackupHostProfile.fromEntity(sampleHost(authMethod = AuthMethod.Key))),
         )
-        val encoded = ChuchuBackupCodec.encodePayload(payload)
-        replaceLastAscii(encoded, "Key", "Bog")
+        val encoded = replaceLastAsciiField(ChuchuBackupCodec.encodePayload(payload), "Key", "Bog")
 
         ChuchuBackupCodec.decodePayload(encoded)
     }
@@ -199,12 +198,29 @@ class ChuchuBackupCoreTest {
 
     @Test
     fun payloadV2ReadsLegacyEnumMultiplexerName() {
-        val encoded = ChuchuBackupCodec.encodePayload(samplePayload())
-        replaceLastAscii(encoded, "tmux", "Tmux")
+        val encoded = replaceLastAsciiField(
+            ChuchuBackupCodec.encodePayload(samplePayload()),
+            "tmux",
+            "Tmux",
+        )
 
         val decoded = ChuchuBackupCodec.decodePayload(encoded)
 
         assertEquals(MultiplexerType.Tmux, decoded.hosts.single().multiplexer)
+    }
+
+    @Test
+    fun payloadReadsLegacyMoshTransportAsSsh() {
+        val original = samplePayload().hosts.single()
+        val encoded = replaceLastAsciiField(
+            ChuchuBackupCodec.encodePayload(samplePayload()),
+            "SSH",
+            "Mosh",
+        )
+
+        val decoded = ChuchuBackupCodec.decodePayload(encoded)
+
+        assertEquals(original, decoded.hosts.single())
     }
 
     @Test
@@ -280,7 +296,7 @@ class ChuchuBackupCoreTest {
         name: String = "server",
         keyId: Long? = 1L,
         authMethod: AuthMethod = AuthMethod.KeyWithPassphrase,
-        transport: Transport = Transport.Mosh,
+        transport: Transport = Transport.SSH,
         remotePath: String? = null,
     ): HostProfile = HostProfile(
         id = id,
@@ -330,17 +346,27 @@ class ChuchuBackupCoreTest {
         bytes[offset + 3] = value.toByte()
     }
 
-    private fun replaceLastAscii(bytes: ByteArray, oldValue: String, newValue: String) {
+    private fun replaceLastAsciiField(bytes: ByteArray, oldValue: String, newValue: String): ByteArray {
         val oldBytes = oldValue.toByteArray(Charsets.UTF_8)
         val newBytes = newValue.toByteArray(Charsets.UTF_8)
-        require(oldBytes.size == newBytes.size)
         var matchIndex = -1
         for (index in 0..bytes.size - oldBytes.size) {
             if (oldBytes.indices.all { offset -> bytes[index + offset] == oldBytes[offset] }) {
                 matchIndex = index
             }
         }
-        require(matchIndex >= 0)
-        newBytes.copyInto(bytes, destinationOffset = matchIndex)
+        require(matchIndex >= Int.SIZE_BYTES)
+        require(readIntAt(bytes, matchIndex - Int.SIZE_BYTES) == oldBytes.size)
+
+        val result = ByteArray(bytes.size - oldBytes.size + newBytes.size)
+        bytes.copyInto(result, endIndex = matchIndex)
+        newBytes.copyInto(result, destinationOffset = matchIndex)
+        bytes.copyInto(
+            result,
+            destinationOffset = matchIndex + newBytes.size,
+            startIndex = matchIndex + oldBytes.size,
+        )
+        writeIntAt(result, matchIndex - Int.SIZE_BYTES, newBytes.size)
+        return result
     }
 }

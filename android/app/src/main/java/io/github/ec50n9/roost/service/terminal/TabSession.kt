@@ -9,7 +9,7 @@ class TabSession(
 ) {
     /**
      * True while the session is left running on the server with no local connection, because no
-     * screen is watching it. Only multiplexer sessions can be parked: for bare SSH, mosh and local
+     * screen is watching it. Only multiplexer sessions can be parked: for bare SSH and local
      * shells the connection *is* the process.
      */
     var parked: Boolean = false

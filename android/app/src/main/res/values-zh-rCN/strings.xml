@@ -274,7 +274,6 @@
     <string name="terminal_unknown_server">服务器</string>
     <string name="terminal_reconnecting">正在重连</string>
     <string name="terminal_reconnecting_attempt">正在重连（第 %1$d 次）</string>
-    <string name="terminal_error_mosh_unsupported">%1$s 不支持 Mosh 连接</string>
     <string name="terminal_error_multiplexer_unsupported">%1$s 尚未支持</string>
     <string name="terminal_error_session_gone">终端会话已失效</string>
     <string name="terminal_error_session_list_stale">会话列表已过期，请刷新后重试。</string>

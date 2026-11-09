@@ -223,7 +223,7 @@ class TerminalSessionRepository private constructor(application: Application) {
     /**
      * Nothing is rendering these sessions any more, and a multiplexer session does not need the app
      * to hold a connection to stay alive — the server keeps it running. So drop the local connection
-     * instead of quietly reading a stream nobody sees. Bare SSH, mosh and local shells are the
+     * instead of quietly reading a stream nobody sees. Bare SSH and local shells are the
      * process itself, so they stay connected.
      */
     private fun parkUnwatchedSessions() {

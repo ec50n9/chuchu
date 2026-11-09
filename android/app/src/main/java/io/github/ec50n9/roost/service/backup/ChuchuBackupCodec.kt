@@ -134,6 +134,15 @@ object ChuchuBackupCodec {
             return MultiplexerType.fromPersistedValue(value) ?: throw BackupFormatException("Unknown $label")
         }
 
+        // Backups written before mosh was dropped can still contain it. mosh bootstrapped over the
+        // same SSH login it stored, so re-reading such a host as SSH loses nothing.
+        fun readTransportField(): Transport {
+            val value = readStringField("transport")
+            if (value == "Mosh") return Transport.SSH
+            return enumValues<Transport>().firstOrNull { it.name == value }
+                ?: throw BackupFormatException("Unknown transport")
+        }
+
         if (reader.readInt() != PAYLOAD_MAGIC) throw BackupFormatException("Invalid backup payload")
         val version = reader.readInt()
         if (version !in 1..PAYLOAD_VERSION) throw BackupFormatException("Unsupported backup payload version")
@@ -167,7 +176,7 @@ object ChuchuBackupCodec {
                 val password = readStringField("password")
                 val keyId = reader.readNullableLong()
                 val keyPassphrase = readStringField("key passphrase")
-                val transport = readEnumField("transport", enumValues<Transport>())
+                val transport = readTransportField()
                 val authMethod = readEnumField("auth method", enumValues<AuthMethod>())
                 val requireAuthOnConnect = reader.readBoolean()
                 val postConnectCommand = readNullableStringField("post-connect command")

@@ -170,7 +170,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                 authMethod = nextAuthMethod,
                 multiplexer =
                     current.multiplexer.takeIf {
-                        transport != Transport.Mosh && it?.runtimeSupported == true
+                        it?.runtimeSupported == true
                     },
             )
     }
@@ -204,7 +204,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
     fun updateMultiplexer(multiplexer: MultiplexerType?) {
         val current = _form.value
         val selected = multiplexer?.takeIf {
-            current.transport != Transport.Mosh && it.runtimeSupported
+            it.runtimeSupported
         }
         _form.value =
             current.copy(
@@ -317,7 +317,7 @@ class AddServerViewModel(application: Application, private val hostId: Long?) :
                     postConnectCommand = current.postConnectCommand.trim().ifBlank { null },
                     multiplexer =
                         current.multiplexer.takeIf {
-                            current.transport != Transport.Mosh && it?.runtimeSupported == true
+                            it?.runtimeSupported == true
                         },
                     autoConnect = current.autoConnect && current.multiplexer != null,
                     remotePath = current.remotePath.trim().ifBlank { null },

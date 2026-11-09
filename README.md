@@ -17,10 +17,10 @@ A terminal session's lifetime lives on the server, not on the phone. tmux / zmx 
 process alive; Roost only attaches back to it. So there is no tab concept here: the local app
 holds no "session container", and the server list simply shows the sessions the server has.
 
-Staying connected is two layers stacked, and one alone is not enough:
+Staying connected has two jobs, and the multiplexer does the one that matters:
 
-- **mosh** — roaming and network changes (transport layer)
 - **multiplexer (tmux / zmx)** — the process keeps running even if the app is killed (process layer)
+- **SSH transport with automatic reconnect** — a dropped link reconnects and re-attaches by itself
 
 Plain SSH (no multiplexer) is a fallback for first contact and emergencies, not the main path.
 
@@ -28,10 +28,10 @@ Plain SSH (no multiplexer) is a fallback for first contact and emergencies, not 
 
 - tailscale, ssh password + key authentication
 - session-first server list: each host card lists its remote sessions, jump straight into one
-- mosh for roaming, tmux / zmx for persistent remote sessions
+- tmux / zmx for persistent remote sessions
 - more than 400 themes from the official ghostty repository
 - configurable accessory keys and custom terminal actions
-- per-host post-connect actions that autorun after SSH/Mosh connects or reconnects
+- per-host post-connect actions that autorun after SSH connects or reconnects
 - encrypted local import/export backups for SSH keys and server profiles
 - image display using libghostty's kitty image protocol support
 - terminal renderer with working resize, scrollback, focus, modifier keys and mouse actions

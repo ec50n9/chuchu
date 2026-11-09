@@ -6,12 +6,6 @@ import android.util.Log
 import io.github.ec50n9.roost.model.AuthMethod
 import io.github.ec50n9.roost.model.MultiplexerType
 import io.github.ec50n9.roost.model.Transport
-import io.github.ec50n9.roost.service.mosh.MoshBootstrapParser
-import io.github.ec50n9.roost.service.mosh.MoshEndpointAddress
-import io.github.ec50n9.roost.service.mosh.MoshEventType
-import io.github.ec50n9.roost.service.mosh.MoshReconnectPolicy
-import io.github.ec50n9.roost.service.mosh.MoshState
-import io.github.ec50n9.roost.service.mosh.NativeMoshService
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerAvailability
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerCommandResult
 import io.github.ec50n9.roost.service.multiplexer.MultiplexerRegistry
@@ -40,7 +34,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 enum class SessionStatus {
     Disconnected,
@@ -103,7 +96,7 @@ class TerminalSessionEngine(
     ) {
         fun multiplexerStartupCommand(): String? {
             val type = multiplexer ?: return null
-            if (!type.runtimeSupported || transport == Transport.Mosh || transport == Transport.LocalShell) return null
+            if (!type.runtimeSupported || transport == Transport.LocalShell) return null
             val sessionName = multiplexerSessionName?.takeIf { it.isNotBlank() } ?: return null
             val runtime = MultiplexerRegistry.forType(type) ?: return null
             return RemotePath.apply(
@@ -128,9 +121,7 @@ class TerminalSessionEngine(
     private val paintPace = PaintPaceGate()
 
     private val bridge = GhosttyBridge()
-    private val moshContact = MoshContactTracker()
     private val nativeSsh = NativeSshService(hostKeyPolicy = ::verifyHostKey)
-    private val moshService = NativeMoshService()
 
     private var handle: Long = 0L
     private var readJob: Job? = null
@@ -233,25 +224,12 @@ class TerminalSessionEngine(
                     )
                 return@launch
             }
-            if (
-                transport != Transport.Mosh &&
-                    transport != Transport.LocalShell &&
-                    !nativeSsh.isAvailable()
-            ) {
+            if (transport != Transport.LocalShell && !nativeSsh.isAvailable()) {
                 _state.value =
                     SessionState(
                         status = SessionStatus.Error,
                         sessionKey = sessionKey,
                         error = "Native SSH unavailable. Check ABI/NDK build.",
-                    )
-                return@launch
-            }
-            if (transport == Transport.Mosh && !moshService.isLoaded) {
-                _state.value =
-                    SessionState(
-                        status = SessionStatus.Error,
-                        sessionKey = sessionKey,
-                        error = "Native mosh unavailable. Check ABI/NDK build.",
                     )
                 return@launch
             }
@@ -470,11 +448,6 @@ class TerminalSessionEngine(
                 if (shouldReconnect) {
                     scheduleReconnect("Connection interrupted: ${e.message ?: "resize failed"}")
                 } else {
-                    if (transport == Transport.Mosh) {
-                        readJob?.cancel()
-                        readJob = null
-                        moshService.close()
-                    }
                     _state.value =
                         _state.value.copy(
                             status = SessionStatus.Error,
@@ -555,7 +528,7 @@ class TerminalSessionEngine(
         val type = params.multiplexer ?: return MultiplexerAvailability.Available
         val multiplexer = MultiplexerRegistry.forType(type)
             ?: return MultiplexerAvailability.UnsupportedMultiplexer(type)
-        if (params.transport == Transport.Mosh || params.transport == Transport.LocalShell) {
+        if (params.transport == Transport.LocalShell) {
             return MultiplexerAvailability.UnsupportedTransport(params.transport)
         }
         return runCatching {
@@ -595,7 +568,7 @@ class TerminalSessionEngine(
             val type = spec.multiplexer ?: throw IllegalStateException("No multiplexer selected")
             val multiplexer = MultiplexerRegistry.forType(type)
                 ?: throw IllegalStateException("${type.label} is not supported yet")
-            if (spec.transport == Transport.Mosh || spec.transport == Transport.LocalShell) {
+            if (spec.transport == Transport.LocalShell) {
                 throw IllegalStateException("${type.label} is not supported for ${spec.transport} connections")
             }
             val result =
@@ -621,7 +594,7 @@ class TerminalSessionEngine(
         val type = spec.multiplexer ?: MultiplexerRegistry.defaultType
         val multiplexer = MultiplexerRegistry.forType(type)
             ?: throw IllegalStateException("${type.label} is not supported yet")
-        if (spec.transport == Transport.Mosh || spec.transport == Transport.LocalShell) {
+        if (spec.transport == Transport.LocalShell) {
             throw IllegalStateException("${type.label} is not supported for ${spec.transport} connections")
         }
         // No separate availability probe: listing the sessions already fails with the remote's own
@@ -652,7 +625,6 @@ class TerminalSessionEngine(
             readJob?.cancel()
             readJob = null
             nativeSsh.close()
-            moshService.close()
             localShellService.close()
             if (handle != 0L) {
                 bridge.nativeDestroy(handle)
@@ -734,10 +706,8 @@ class TerminalSessionEngine(
             scope.launch(dispatcher) {
                 val transport = lastConnectionParams?.transport
                 var failed = false
-                var moshFailureCode: Int? = null
                 try {
                     when (transport) {
-                        Transport.Mosh -> moshFailureCode = startMoshReadLoop()
                         Transport.LocalShell -> startLocalShellReadLoop()
                         else -> startSshReadLoop()
                     }
@@ -757,7 +727,6 @@ class TerminalSessionEngine(
                 // Only the SSH channel can tell "the program exited" from "the link died".
                 val sessionEnded =
                     !disconnectRequested &&
-                        transport != Transport.Mosh &&
                         transport != Transport.LocalShell &&
                         nativeSsh.isChannelEof()
                 when (readLoopExitAction(transport, sessionEnded)) {
@@ -770,17 +739,6 @@ class TerminalSessionEngine(
                                 _state.value.copy(
                                     status = SessionStatus.Disconnected,
                                     error = null,
-                                )
-                        }
-                    }
-                    ReadLoopExitAction.RequireManualReconnect -> {
-                        moshService.close()
-                        if (!disconnectRequested) {
-                            val failure = moshFailureCode?.let { " (failure code $it)" }.orEmpty()
-                            _state.value =
-                                _state.value.copy(
-                                    status = SessionStatus.Error,
-                                    error = "Mosh session ended$failure. Reconnect to start a new session.",
                                 )
                         }
                     }
@@ -845,105 +803,17 @@ class TerminalSessionEngine(
         }
     }
 
-    private suspend fun startMoshReadLoop(): Int? {
-        Log.d("TerminalSession", "MOSH: read loop started")
-        var loopCount = 0
-        var lastActivityMs = System.currentTimeMillis()
-        var failureCode: Int? = null
-        while (currentCoroutineContext().isActive) {
-            loopCount++
-
-            // Drive retransmissions, acks, heartbeats, timeout checks
-            val tickOk = moshService.maintenanceTick()
-            if (!tickOk) {
-                Log.w("TerminalSession", "MOSH: maintenanceTick returned false")
-            }
-
-            // Drive the UDP socket (send queued datagrams, receive inbound)
-            val pumpOk = moshService.pumpNetwork()
-            if (!pumpOk) {
-                Log.w("TerminalSession", "MOSH: pumpNetwork returned false")
-            }
-
-            // Drain all available output events
-            var hadEvent = false
-            while (true) {
-                val event = moshService.pollOutput() ?: break
-                hadEvent = true
-                when (event.eventType) {
-                    MoshEventType.HostBytes.code -> {
-                        if (event.payload.isNotEmpty() && handle != 0L) {
-                            feedRemoteChunk(event.payload)
-                        }
-                    }
-                    MoshEventType.Resize.code -> {
-                        if (event.cols > 0 && event.rows > 0) {
-                            cols = event.cols
-                            rows = event.rows
-                            bridge.nativeResize(handle, cols, rows, cellWidth, cellHeight)
-                        }
-                    }
-                    MoshEventType.EchoAck.code -> Unit
-                    MoshEventType.StateChanged.code -> {
-                        Log.d("TerminalSession", "MOSH: STATE_CHANGED: ${String(event.payload)}")
-                    }
-                    MoshEventType.Diagnostic.code -> {
-                        Log.d("TerminalSession", "MOSH: DIAG: ${String(event.payload)}")
-                    }
-                    else -> {
-                        Log.d("TerminalSession", "MOSH: unknown event type=${event.eventType}")
-                    }
-                }
-            }
-
-            if (hadEvent && handle != 0L) {
-                requestDataSnapshot()
-                lastActivityMs = System.currentTimeMillis()
-            }
-
-            // Check session health
-            val runtime = moshService.pollState()
-            if (runtime != null) {
-                updateMoshContactStatus(runtime.pendingOutbound)
-                if (runtime.state == MoshState.Failed.code) {
-                    failureCode = runtime.lastFailureCode
-                    Log.e("TerminalSession", "MOSH: session FAILED code=$failureCode")
-                    break
-                }
-            }
-
-            // Adaptive cadence: Mosh's retransmit/heartbeat timers are coarse, so
-            // backing the pump off while idle is safe and avoids a 500 Hz spin.
-            delay(idleReadDelayMs(System.currentTimeMillis() - lastActivityMs))
-        }
-        Log.d("TerminalSession", "MOSH: read loop exited after $loopCount iterations")
-        return failureCode
-    }
-
-    private fun updateMoshContactStatus(pendingOutbound: Int) {
-        val contactLost = moshContact.isContactLost(pendingOutbound, SystemClock.elapsedRealtime())
-        val next =
-            when (_state.value.status) {
-                SessionStatus.Connected -> if (contactLost) SessionStatus.Reconnecting else return
-                SessionStatus.Reconnecting -> if (contactLost) return else SessionStatus.Connected
-                else -> return
-            }
-        _state.value = _state.value.copy(status = next)
-    }
-
     private suspend fun establishConnection(params: ConnectionParams, username: String) {
         if (handle != 0L) {
             bridge.nativeDestroy(handle)
             handle = 0L
         }
         nativeSsh.close()
-        moshService.close()
         localShellService.close()
         handle = bridge.nativeCreate(cols, rows, SCROLLBACK_LINES)
         applyTerminalOptions()
 
         when (params.transport) {
-            Transport.Mosh -> establishMoshConnection(params, username)
             Transport.LocalShell -> establishLocalShellConnection()
             else -> establishSshConnection(params, username)
         }
@@ -1019,120 +889,6 @@ class TerminalSessionEngine(
             }
         }
         return null
-    }
-
-    private suspend fun establishMoshConnection(params: ConnectionParams, username: String) {
-        Log.d("TerminalSession", "MOSH: Phase 1 — SSH bootstrap start")
-        moshContact.reset()
-        check(nativeSsh.isAvailable()) { "Native SSH unavailable for mosh bootstrap" }
-        nativeSsh.connect(
-            host = params.host,
-            port = params.port,
-            username = username,
-            authMethod = params.authMethod,
-            password = if (params.authMethod == AuthMethod.Password) params.password else "",
-            publicKeyOpenSsh = params.publicKeyOpenSsh,
-            privateKeyPem = params.privateKeyPem,
-            keyPassphrase = params.keyPassphrase,
-            ipv4Only = true,
-        )
-        val endpointHost =
-            try {
-                MoshEndpointAddress.fromSshPeer(params.host, nativeSsh.peerAddress())
-            } catch (err: Exception) {
-                nativeSsh.close()
-                throw err
-            }
-        Log.d("TerminalSession", "MOSH: endpoint host=$endpointHost from profile host=${params.host}")
-        // Use exec channel to bypass shell init noise and MOTD.
-        // Falls back to shell if the remote server doesn't support exec.
-        val moshCommand = MoshReconnectPolicy.bootstrapCommand()
-        val execOpened = runCatching { nativeSsh.openExec(moshCommand) }.getOrDefault(false)
-        if (!execOpened) {
-            Log.w("TerminalSession", "MOSH: exec channel unavailable, falling back to shell")
-            nativeSsh.openShell(cols, rows, ptyWidthPx(), ptyHeightPx())
-            val fallback = "$moshCommand\n"
-            nativeSsh.write(fallback.toByteArray(Charsets.UTF_8))
-        }
-        Log.d(
-            "TerminalSession",
-            "MOSH: SSH connected, ${if (execOpened) "exec" else "shell"} channel opened",
-        )
-
-        // Read output until we find MOSH CONNECT, the channel hits EOF, or
-        // we time out. If the first window has no output and no EOF on exec,
-        // extend once to distinguish slow remote bootstrap from hard failure.
-        val outputBuffer = StringBuilder()
-        suspend fun readBootstrapWindow(timeoutMs: Long): Boolean {
-            val deadline = System.currentTimeMillis() + timeoutMs
-            while (System.currentTimeMillis() < deadline) {
-                val chunk = nativeSsh.read(4096)
-                if (chunk != null && chunk.isNotEmpty()) {
-                    val text = String(chunk, Charsets.UTF_8)
-                    outputBuffer.append(text)
-                    val result = MoshBootstrapParser.parse(endpointHost, outputBuffer.toString())
-                    if (result is MoshBootstrapParser.ParseResult.Success) {
-                        Log.d(
-                            "TerminalSession",
-                            "MOSH: Parsed endpoint host=${result.endpoint.host} port=${result.endpoint.port}",
-                        )
-                        nativeSsh.close()
-                        val configJson =
-                            JSONObject()
-                                .apply {
-                                    put("host", result.endpoint.host)
-                                    put("port", result.endpoint.port)
-                                    put("keyBase64_22", result.endpoint.key)
-                                    put("networkTimeoutMs", MoshReconnectPolicy.CLIENT_NETWORK_TIMEOUT_MS)
-                                    put("maxRetransmitCount", MoshReconnectPolicy.CLIENT_MAX_RETRANSMIT_COUNT)
-                                    put("useNetworkCrypto", true)
-                                }
-                                .toString()
-                        if (!moshService.create(configJson)) {
-                            throw IllegalStateException("Failed to create mosh client")
-                        }
-                        Log.d("TerminalSession", "MOSH: mosh client created, starting...")
-                        if (!moshService.start()) {
-                            throw IllegalStateException("Failed to start mosh client")
-                        }
-                        Log.d("TerminalSession", "MOSH: mosh client started, resizing $cols x $rows")
-                        moshService.resize(cols, rows)
-                        return true
-                    }
-                } else {
-                    if (execOpened && nativeSsh.isChannelEof()) {
-                        Log.d("TerminalSession", "MOSH: exec channel EOF reached")
-                        return false
-                    }
-                    delay(50)
-                }
-            }
-            return false
-        }
-
-        var found = readBootstrapWindow(timeoutMs = 10_000)
-        if (!found && execOpened && outputBuffer.isEmpty() && !nativeSsh.isChannelEof()) {
-            Log.w("TerminalSession", "MOSH: bootstrap still running after 10s with no output; extending window by 15s")
-            found = readBootstrapWindow(timeoutMs = 15_000)
-        }
-        if (!found) {
-            val eofBeforeClose = if (execOpened) nativeSsh.isChannelEof() else true
-            nativeSsh.close()
-            val rawOutput = outputBuffer.toString()
-            val reason =
-                if (rawOutput.isBlank()) {
-                    if (execOpened && !eofBeforeClose) {
-                        "Mosh bootstrap command still running after timeout (no output, no EOF)"
-                    } else {
-                        "Mosh bootstrap produced no output"
-                    }
-                } else {
-                    rawOutput.trim()
-                }
-            Log.e("TerminalSession", "MOSH: Bootstrap failed: $reason")
-            throw IllegalStateException(reason)
-        }
-        Log.d("TerminalSession", "MOSH: Phase 2 — mosh client ready")
     }
 
     private fun TabSpec.toConnectionParams(): ConnectionParams = ConnectionParams(
@@ -1302,7 +1058,6 @@ class TerminalSessionEngine(
 
     private fun writeRemote(data: ByteArray) {
         when (lastConnectionParams?.transport) {
-            Transport.Mosh -> moshService.sendInput(data)
             Transport.LocalShell -> localShellService.write(data)
             else -> nativeSsh.write(data)
         }
@@ -1368,10 +1123,6 @@ class TerminalSessionEngine(
 
     private fun resizeRemote(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
         when (lastConnectionParams?.transport) {
-            Transport.Mosh -> {
-                Log.d("TerminalSession", "MOSH: resizeRemote ${cols}x${rows}")
-                moshService.resize(cols, rows)
-            }
             Transport.LocalShell -> localShellService.resize(cols, rows, widthPx, heightPx)
             else -> nativeSsh.resize(cols, rows, widthPx, heightPx)
         }

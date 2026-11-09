@@ -114,14 +114,13 @@ class NativeSshService(
         publicKeyOpenSsh: String = "",
         privateKeyPem: String = "",
         keyPassphrase: String = "",
-        ipv4Only: Boolean = false,
     ) {
         require(bridge.isLoaded()) { "Native SSH unavailable: ${bridge.nativeStatus()}" }
         close()
         handle = bridge.nativeCreateSession()
         check(handle != 0L) { "Failed to create native SSH session" }
 
-        if (!bridge.nativeConnect(handle, host, port, username, ipv4Only)) {
+        if (!bridge.nativeConnect(handle, host, port, username)) {
             throw IllegalStateException(
                 bridge.nativeGetLastError(handle) ?: "Native SSH connect failed"
             )
@@ -401,14 +400,6 @@ class NativeSshService(
                 bridge.nativeGetLastError(handle) ?: "Native SFTP delete directory failed"
             )
         }
-    }
-
-    fun peerAddress(): String {
-        check(handle != 0L) { "Not connected" }
-        return bridge.nativeGetPeerAddress(handle)
-            ?: throw IllegalStateException(
-                bridge.nativeGetLastError(handle) ?: "Native SSH peer address unavailable"
-            )
     }
 
     override fun close() {

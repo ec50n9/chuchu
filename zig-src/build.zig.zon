@@ -14,10 +14,6 @@
         .libssh2 = .{
             .path = "src/vendor/libssh2",
         },
-        .mosh = .{
-            .url = "git+https://github.com/jossephus/zig-mosh-client#02843a7d3533c3e627d93522796c70e3057e3141",
-            .hash = "mosh-0.0.0-H8gO1iYcAgAxeUCk65L-W7RC7USGLGpUz1eOSCecJfg3",
-        },
         .openssl = .{
             .url = "git+https://github.com/jossephus/openssl-zig#c9e173f10ecc2cbcfca487207c8e7b1983426873",
             .hash = "openssl-3.6.0-wZcA72kq8gFZJg-TxgrT6Qlz_kfo-I5RQ2mnW7XmZMZT",

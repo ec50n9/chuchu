@@ -594,7 +594,7 @@ export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeDestroyS
     destroyNativeSshSession(session);
 }
 
-export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeConnect(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, host: c.jstring, port: c.jint, username: c.jstring, ipv4_only: c.jboolean) callconv(.c) c.jboolean {
+export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeConnect(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong, host: c.jstring, port: c.jint, username: c.jstring) callconv(.c) c.jboolean {
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_FALSE;
     const host_slice = jniDupString(env, host) orelse {
@@ -623,14 +623,9 @@ export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeConnect(
         return c.JNI_FALSE;
     };
 
-    const family: c_int = if (ipv4_only != c.JNI_FALSE) c.AF_INET else c.AF_UNSPEC;
-    const fd = connectSocket(host_z, @intCast(@max(port, 0)), family) catch |err| {
+    const fd = connectSocket(host_z, @intCast(@max(port, 0)), c.AF_UNSPEC) catch |err| {
         logError("Socket connect failed host={s} port={} err={s}", .{ host_slice, port, @errorName(err) });
-        if (family == c.AF_INET and err == error.AddressLookupFailed) {
-            setError(session, "No IPv4 address found for host={s}", .{host_slice});
-        } else {
-            setError(session, "Socket connect failed host={s} port={}", .{ host_slice, port });
-        }
+        setError(session, "Socket connect failed host={s} port={}", .{ host_slice, port });
         return c.JNI_FALSE;
     };
     logInfo("Socket connected fd={}", .{fd});
@@ -1051,10 +1046,10 @@ export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeOpenExec
     };
     defer allocator.free(command_slice);
     // Open a fresh session channel for the exec request. We do NOT request a
-    // PTY here — exec channels for non-interactive commands like
-    // `mosh-server new` should run without a TTY so the server can detach
-    // cleanly, write its output to stdout, and close the channel (giving us
-    // a real EOF signal instead of relying on a deadline).
+    // PTY here — exec channels for non-interactive commands should run
+    // without a TTY so the command can write its output to stdout and close
+    // the channel (giving us a real EOF signal instead of relying on a
+    // deadline).
     // Close any previous channel *before* opening this one. A server with MaxSessions 1 rejects
     // the new channel while the old one is still open, and callers do open a throwaway exec
     // channel (the TERM probe) before opening the shell.
@@ -1195,10 +1190,9 @@ export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeChannelE
     _ = thiz;
     const session = sessionFromHandle(handle) orelse return c.JNI_TRUE;
     const channel = session.channel orelse return c.JNI_TRUE;
-    // libssh2_channel_eof returns 1 when the remote sent EOF on the channel
-    // (e.g. mosh-server printed its CONNECT line and detached). Returning
-    // EOF as "true" lets the Kotlin bootstrap loop exit immediately on
-    // success instead of waiting out the full deadline.
+    // libssh2_channel_eof returns 1 when the remote sent EOF on the channel.
+    // Returning EOF as "true" lets a Kotlin read loop exit immediately
+    // instead of waiting out its full deadline.
     return if (c.libssh2_channel_eof(channel) == 1) c.JNI_TRUE else c.JNI_FALSE;
 }
 
@@ -1267,28 +1261,6 @@ export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeIpcExcha
     }
 
     return jniNewByteArrayOrNull(env, response.items);
-}
-
-export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeGetPeerAddress(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) c.jstring {
-    _ = thiz;
-    const session = sessionFromHandle(handle) orelse return null;
-    if (session.socket_fd < 0) {
-        setError(session, "SSH peer address unavailable: not connected", .{});
-        return null;
-    }
-    var addr: c.struct_sockaddr_storage = undefined;
-    var addr_len: c.socklen_t = @sizeOf(c.struct_sockaddr_storage);
-    if (c.getpeername(session.socket_fd, @ptrCast(&addr), &addr_len) != 0) {
-        setError(session, "SSH peer address unavailable: getpeername errno={}", .{c.__errno().*});
-        return null;
-    }
-    var host_buf: [64]u8 = undefined;
-    const rc = c.getnameinfo(@ptrCast(&addr), addr_len, &host_buf, host_buf.len, null, 0, c.NI_NUMERICHOST);
-    if (rc != 0) {
-        setError(session, "SSH peer address unavailable: getnameinfo rc={}", .{rc});
-        return null;
-    }
-    return jniNewStringOrNull(env, std.mem.sliceTo(&host_buf, 0));
 }
 
 export fn Java_io_github_ec50n9_roost_service_ssh_NativeSshBridge_nativeClose(env: *c.JNIEnv, thiz: c.jobject, handle: c.jlong) callconv(.c) void {

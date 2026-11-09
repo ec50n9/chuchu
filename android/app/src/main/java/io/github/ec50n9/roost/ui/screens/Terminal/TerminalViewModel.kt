@@ -177,15 +177,6 @@ class TerminalViewModel(application: Application) : AndroidViewModel(application
         val actionGeneration = ++multiplexerActionGeneration
         pendingMultiplexerReconnect = action
         val spec = action.spec
-        val label = spec.multiplexer?.label ?: MultiplexerRegistry.defaultType.label
-        if (spec.transport == Transport.Mosh) {
-            _multiplexerState.value = MultiplexerUiState(
-                preflightError =
-                    app.getString(R.string.terminal_error_mosh_unsupported, label),
-                reconnectRecovery = true,
-            )
-            return
-        }
         if (spec.multiplexer != null && spec.multiplexer.runtimeSupported.not()) {
             _multiplexerState.value = MultiplexerUiState(
                 preflightError =

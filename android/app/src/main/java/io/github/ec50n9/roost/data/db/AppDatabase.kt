@@ -9,12 +9,14 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import io.github.ec50n9.roost.model.HostProfile
 import io.github.ec50n9.roost.model.SshKey
 
 @Database(
     entities = [HostProfile::class, SshKey::class],
-    version = 13,
+    version = 14,
     autoMigrations = [
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7, spec = AppDatabase.Migration6To7::class),
@@ -45,6 +47,18 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var instance: AppDatabase? = null
 
+        /**
+         * mosh stopped being a transport. A host saved with it becomes a plain SSH host: mosh ran
+         * its connection over the same SSH login the profile already stored, so the host keeps
+         * working exactly as before, just without the mosh transport.
+         */
+        internal val MIGRATION_13_14 =
+            object : Migration(13, 14) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("UPDATE host_profiles SET transport = 'SSH' WHERE transport = 'Mosh'")
+                }
+            }
+
         fun getInstance(context: Context): AppDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -52,6 +66,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "chuchu.db",
                 )
+                    .addMigrations(MIGRATION_13_14)
                     .build()
                     .also { instance = it }
             }

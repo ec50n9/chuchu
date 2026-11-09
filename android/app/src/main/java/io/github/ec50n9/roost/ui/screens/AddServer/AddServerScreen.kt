@@ -151,12 +151,11 @@ fun AddServerScreen(vm: AddServerViewModel, onBack: () -> Unit, modifier: Modifi
 
         SectionHeader(stringResource(R.string.section_transport))
         ChuSegmentedControl(
-            options = listOf(Transport.SSH, Transport.TailscaleSSH, Transport.Mosh),
+            options = listOf(Transport.SSH, Transport.TailscaleSSH),
             labels =
                 mapOf(
                     Transport.SSH to "ssh",
                     Transport.TailscaleSSH to "tailscale",
-                    Transport.Mosh to "mosh",
                 ),
             selected = form.transport,
             onSelect = vm::updateTransport,
